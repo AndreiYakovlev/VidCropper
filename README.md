@@ -1,5 +1,9 @@
 # VidCropper
 
+[![CI](https://github.com/AndreiYakovlev/VidCropper/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AndreiYakovlev/VidCropper/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/AndreiYakovlev/VidCropper)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/AndreiYakovlev/VidCropper)](https://github.com/AndreiYakovlev/VidCropper/releases/latest)
+
 **Оставьте в видео главное.** Локальный редактор для кадрирования и уменьшения видео с тёмным интерфейсом в браузере.
 
 Перетащите файл, выберите область, задайте масштаб и FPS — получите готовый MP4. Видео обрабатывается на вашем компьютере через FFmpeg и не отправляется в интернет.
@@ -123,6 +127,8 @@ dotnet run -- --OpenBrowser=true
 Стек: **C# / ASP.NET Core .NET 10**, ванильные **HTML + CSS + JavaScript**, нативные **FFmpeg и ffprobe**. Фронтенд находится в `wwwroot`, сервер обработки — в `Backend`. Сборщик JavaScript и npm-пакеты не используются.
 
 ### Проверки
+
+GitHub Actions автоматически собирает проект и запускает тесты на Windows при push в `main` и в pull request, направленных в `main`. Статус виден на бейдже **CI** в начале README; нажатие открывает журнал проверок. Запуск вручную: **Actions → CI → Run workflow**. Конфигурация находится в [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 Из корня проекта:
 
