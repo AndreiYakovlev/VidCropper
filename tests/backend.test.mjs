@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dirname, '..');
-const build = resolve(root, 'artifacts/backend-build/VidCropper.dll');
+const build = process.env.VIDCROPPER_TEST_DLL || resolve(root, 'artifacts/backend-build/VidCropper.dll');
 const fixtures = resolve(root, 'artifacts/backend-tests');
 const headers = { 'X-VidCropper': '1' };
 

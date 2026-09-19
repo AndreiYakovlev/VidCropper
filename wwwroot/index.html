@@ -2,15 +2,15 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VidCropper — локальный видеоредактор</title><link rel="stylesheet" href="styles.css"></head>
 <body>
-<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><symbol id="crop-icon" viewBox="0 0 24 24"><path d="M6 3v15h15M3 6h15v15"/></symbol><symbol id="upload-icon" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol></svg>
-<header><a class="brand" href="/"><span class="brand-mark"><svg><use href="#crop-icon"/></svg></span>VidCropper<span class="version">LOCAL EDITOR</span></a><div class="header-right"><span class="local-dot"></span><span>Видео остаётся на вашем компьютере</span><button class="button secondary" id="open-top"><svg><use href="#upload-icon"/></svg>Открыть видео</button><button class="text-button" id="shutdown" title="Остановить сервер и очистить временные файлы">Завершить</button></div></header>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><symbol id="crop-icon" viewBox="0 0 24 24"><path d="M6 3v15h15M3 6h15v15"/></symbol><symbol id="upload-icon" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol><symbol id="link-icon" viewBox="0 0 24 24"><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 1 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 0)"/></symbol></svg>
+<header><a class="brand" href="/"><span class="brand-mark"><svg><use href="#crop-icon"/></svg></span>VidCropper<span class="version">LOCAL EDITOR</span></a><div class="header-right"><span class="local-dot"></span><span>Видео остаётся на вашем компьютере</span><button class="button secondary" id="open-top"><svg><use href="#upload-icon"/></svg>Открыть видео</button><button class="button secondary" id="open-link-top" type="button"><svg aria-hidden="true"><use href="#link-icon"/></svg>Открыть видео по ссылке</button><button class="text-button" id="shutdown" title="Остановить сервер и очистить временные файлы">Завершить</button></div></header>
 <main>
 <div class="page-heading"><div><div class="eyebrow">ВАШ КАДР. ВАШ ФОРМАТ.</div><h1>Оставьте главное.</h1><p>Выберите область, настройте размер — и придайте видео нужную форму.</p></div><span class="stage-badge">01 <span>/</span> Кадрирование</span></div>
 <div class="workspace">
 <section class="editor-column" aria-label="Предпросмотр видео">
 <div class="panel preview-panel"><div class="panel-toolbar"><div class="toolbar-title"><span class="status-dot"></span>Предпросмотр</div><div class="segmented"><button id="source-view" class="active" aria-pressed="true" disabled>Исходник</button><button id="crop-view" aria-pressed="false" disabled>Кроп</button></div></div>
 <div id="stage" class="stage">
-<div id="empty" class="empty"><div class="upload-art"><svg><use href="#upload-icon"/></svg><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span></div><h2>Перетащите видео сюда</h2><p>Или выберите файл на компьютере</p><button id="open-empty" class="button primary">Выбрать видео <span>↗</span></button><small>Локальный предпросмотр · без загрузки в интернет</small></div>
+<div id="empty" class="empty"><div class="upload-art"><svg><use href="#upload-icon"/></svg><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span></div><h2>Перетащите видео сюда</h2><p>Или выберите файл на компьютере</p><div class="empty-actions"><button id="open-empty" class="button primary">Выбрать видео <span>↗</span></button><button id="open-link-empty" class="button secondary" type="button"><svg aria-hidden="true"><use href="#link-icon"/></svg>Открыть видео по ссылке</button></div><small>Локальный предпросмотр · без загрузки в интернет</small></div>
 <div id="video-surface" hidden><video id="video" playsinline preload="metadata"></video><div id="crop-overlay"><div id="crop-frame" tabindex="0" role="group" aria-label="Область кадрирования. Стрелки перемещают рамку, Shift увеличивает шаг."><div class="thirds"></div><span id="frame-label"></span><i data-handle="nw"></i><i data-handle="n"></i><i data-handle="ne"></i><i data-handle="e"></i><i data-handle="se"></i><i data-handle="s"></i><i data-handle="sw"></i><i data-handle="w"></i></div></div></div>
 <canvas id="crop-canvas" hidden aria-label="Обрезанный предпросмотр"></canvas>
 </div>
@@ -36,4 +36,39 @@
 <section class="result"><div class="section-title"><h2>Результат</h2><span class="format-badge">MP4</span></div><dl><div><dt>Длительность</dt><dd id="summary-duration">—</dd></div><div><dt>Область</dt><dd id="summary-crop">—</dd></div><div><dt>Масштаб</dt><dd id="summary-scale">100%</dd></div><div><dt>Видео</dt><dd id="summary-video">H.264 · 30 FPS</dd></div><div><dt>Звук</dt><dd id="summary-audio">Сохранить при наличии</dd></div></dl><button id="export" class="button primary export" disabled>Экспортировать видео <span>↗</span></button><progress id="export-progress" max="100" hidden aria-label="Прогресс обработки"></progress><button id="cancel" class="cancel" disabled>Отмена</button><p id="export-status" class="export-note" role="status">Выберите видео для начала работы.</p><p id="result-details" hidden></p><a id="download" class="button secondary" hidden>Скачать MP4 ↓</a></section>
 </aside></div><footer><span>VIDCROPPER <span class="footer-separator">/</span> Создавайте точный кадр.</span><span>Локально. Приватно. Без лишнего.</span></footer>
 </main><input type="file" id="file-input" accept="video/*,.mkv,.avi,.mov,.webm,.mp4,.m4v" hidden><div id="drop-indicator" hidden>Отпустите файл, чтобы открыть видео</div><script type="module" src="js/app.js"></script>
+<dialog id="link-dialog" class="link-dialog" aria-labelledby="link-title" aria-describedby="link-description link-age-note">
+  <div class="link-dialog-heading"><div class="link-dialog-icon"><svg aria-hidden="true"><use href="#link-icon"/></svg></div><button type="button" class="link-close" data-close-link aria-label="Закрыть">×</button></div>
+  <h2 id="link-title">Открыть видео по ссылке</h2>
+  <p id="link-description" class="link-demo">Скачайте видео на компьютер и откройте его в редакторе.</p>
+  <form id="link-form" novalidate>
+    <label for="video-url">Ссылка на видео</label>
+    <input id="video-url" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false" aria-describedby="link-error" autofocus>
+    <p id="link-error" class="link-error" role="alert" hidden></p>
+    <div id="link-quality-field" class="link-quality-field" hidden>
+      <label for="link-quality">Качество видео</label>
+      <select id="link-quality" aria-describedby="link-quality-help">
+        <option value="best" selected>Оригинал</option>
+      </select>
+      <p id="link-quality-help" class="meta-note">Число p — высота кадра в пикселях. Если выбранное качество недоступно, сообщим об этом. Видео меньшего разрешения автоматически не подставляется.</p>
+    </div>
+    <div class="link-actions"><button type="button" class="button secondary" data-close-link>Отмена</button><button id="link-submit" type="submit" class="button primary" disabled>Проверить ссылку</button></div>
+  </form>
+  <section id="link-installation" hidden aria-labelledby="link-install-title">
+    <div class="link-install-card"><h3 id="link-install-title" tabindex="-1">Для скачивания нужны инструменты</h3>
+    <p>Скачать yt-dlp и Deno в папку <code>tools</code> рядом с приложением? Deno нужен для загрузки с YouTube. Уже скачанные инструменты будут использованы повторно.</p>
+    <p class="link-manual">Для ручной установки поместите <code>yt-dlp.exe</code> и <code>deno.exe</code> в папку <code>tools</code>. Из архива Deno нужен только <code>deno.exe</code>.</p></div>
+    <div class="link-install-actions"><button id="link-install" type="button" class="button primary">Скачать инструменты</button><a class="button secondary" href="https://github.com/yt-dlp/yt-dlp/releases/latest" target="_blank" rel="noopener noreferrer">yt-dlp на GitHub <span aria-hidden="true">↗</span></a></div>
+    <p class="link-manual"><a href="https://github.com/denoland/deno/releases/latest" target="_blank" rel="noopener noreferrer">Deno на GitHub ↗</a> · архив <code>deno-x86_64-pc-windows-msvc.zip</code></p><button id="link-recheck" type="button" class="button secondary">Проверить установку и ссылку</button>
+    <p id="link-install-status" class="link-install-status" role="status"></p>
+    <button id="link-back" type="button" class="text-button">← Назад</button>
+  </section>
+  <section id="link-working" hidden aria-label="Загрузка видео">
+    <p id="link-working-status" role="status" tabindex="-1">Подготовка…</p>
+    <progress id="link-progress" max="100" aria-label="Прогресс загрузки"></progress>
+    <p class="meta-note">После загрузки видео откроется в редакторе. При необходимости приложение подготовит MP4/H.264.</p>
+    <button id="link-abort" type="button" class="button secondary">Отменить загрузку</button>
+  </section>
+  <p id="link-failure" class="link-error" role="alert" hidden></p>
+  <p id="link-age-note" class="link-age-note">Видео с возрастным ограничением на YouTube могут не скачаться.</p>
+</dialog>
 </body></html>

@@ -9,6 +9,30 @@ public static class Api
 
     public static void MapMediaApi(this WebApplication app, MediaOptions options)
     {
+        app.MapGet("/api/link-tools", (DownloadTools tools) => Results.Ok(tools.Status()));
+        app.MapPost("/api/link-tools/{id:guid}/install", async (Guid id, LinkDownloadService service, CancellationToken ct) =>
+            Results.Ok(new { installed = await service.InstallAsync(id, ct) }));
+        app.MapGet("/api/link-operations/{id:guid}", (Guid id, LinkDownloadService service) => Results.Ok(service.Get(id)));
+        app.MapPost("/api/link-inspections/{id:guid}", async (Guid id, LinkRequest request, LinkDownloadService service, CancellationToken ct) =>
+            Results.Ok(await service.InspectAsync(id, request, ct)));
+        app.MapPost("/api/link-downloads/{id:guid}", async (Guid id, LinkRequest request, LinkDownloadService service, MediaStore store, HttpContext context, CancellationToken ct) =>
+        {
+            var media = await service.DownloadAsync(id, request, ct);
+            // If the client closes before receiving the result, it cannot release this source itself.
+            context.Response.RegisterForDispose(ct.Register(() => store.Delete(media.Id)));
+            return Results.Ok(media);
+        });
+        app.MapGet("/api/media/{id:guid}/preview", (Guid id, MediaStore store, HttpContext context) =>
+        {
+            var lease = store.Acquire(id);
+            try
+            {
+                var stream = new FileStream(lease.Source.Path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                context.Response.RegisterForDispose(lease);
+                return Results.File(stream, "video/mp4", enableRangeProcessing: true);
+            }
+            catch { lease.Dispose(); throw; }
+        });
         app.MapGet("/api/config", async (MediaTools tools, CancellationToken ct) =>
             Results.Ok(new { maxUploadBytes = options.MaxUploadBytes, error = await tools.CheckAsync(ct) }));
         app.MapPut("/api/media/{id:guid}", async (Guid id, HttpRequest request, MediaStore store, MediaTools tools, IHostApplicationLifetime lifetime) =>

@@ -59,17 +59,17 @@ export function setupPlayer() {
     document.querySelector('#empty').hidden = false;
     showError('Браузер не смог воспроизвести это видео. Выберите файл с поддерживаемым кодеком, например MP4/H.264. Копии для предпросмотра не создаются.');
   }
-  function open(file) {
+  function open(file, remoteMedia = null) {
     if (!file) return;
     if (state.busyExport) { showError('Дождитесь завершения экспорта или отмените его перед заменой видео.'); return; }
     const version = ++generation;
     video.onloadedmetadata = null; video.onerror = null;
     clearSource(); error.hidden = true;
-    update({ file, ready: false, crop: null, width: 0, height: 0, duration: 0, serverDuration: null, trim: fullRange(0), view: 'source', preset: 'free', ratio: null });
+    update({ file, remoteMedia, ready: false, crop: null, width: 0, height: 0, duration: 0, serverDuration: null, trim: fullRange(0), view: 'source', preset: 'free', ratio: null });
     seek.value = 0; document.querySelector('#current-time').textContent = '00:00.00';
     document.querySelector('#empty').hidden = false;
     if (!file.size) { showError('Файл пуст. Выберите другое видео.'); return; }
-    objectUrl = URL.createObjectURL(file);
+    if (!remoteMedia) objectUrl = URL.createObjectURL(file);
     video.onloadedmetadata = () => {
       if (version !== generation) return;
       if (!video.videoWidth || !video.videoHeight || !Number.isFinite(video.duration) || video.duration <= 0) { fail(); return; }
@@ -79,20 +79,26 @@ export function setupPlayer() {
       update({ ready: true, width, height, duration, trim: fullRange(duration), crop: fitCrop(width, height) });
     };
     video.onerror = () => { if (version === generation) fail(); };
-    video.src = objectUrl;
+    video.src = remoteMedia ? `/api/media/${remoteMedia.id}/preview` : objectUrl;
   }
   for (const id of ['open-top', 'open-empty']) document.getElementById(id).addEventListener('click', () => input.click());
   input.addEventListener('change', () => { open(input.files[0]); input.value = ''; });
   let dragDepth = 0;
   const indicator = document.querySelector('#drop-indicator');
   document.addEventListener('dragenter', event => {
+    if (document.querySelector('dialog[open]')) { event.preventDefault(); return; }
     if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault(); dragDepth++; indicator.hidden = false;
   });
-  document.addEventListener('dragover', event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } });
+  document.addEventListener('dragover', event => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = document.querySelector('dialog[open]') ? 'none' : 'copy';
+  });
   document.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) indicator.hidden = true; });
   document.addEventListener('drop', event => {
     event.preventDefault(); dragDepth = 0; indicator.hidden = true;
+    if (document.querySelector('dialog[open]')) return;
     if (event.dataTransfer.files.length > 1) { showError('Выберите одно видео за раз. Текущее видео не изменено.'); return; }
     open(event.dataTransfer.files[0]);
   });
@@ -123,5 +129,5 @@ export function setupPlayer() {
     event.target.setAttribute('aria-pressed', String(!video.muted));
   });
   window.addEventListener('pagehide', () => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
-  return video;
+  return { video, openRemote: source => open({ name: source.name, size: source.info.size }, source) };
 }

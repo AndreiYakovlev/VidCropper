@@ -7,6 +7,21 @@ namespace VidCropper.Backend;
 
 public sealed class MediaTools(MediaOptions options, ILogger<MediaTools> logger)
 {
+    public string FfmpegExecutable
+    {
+        get
+        {
+            var executable = Resolve(options.FfmpegPath, "ffmpeg");
+            if (Path.IsPathRooted(executable)) return executable;
+            if (File.Exists(executable)) return Path.GetFullPath(executable);
+            foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            {
+                var candidate = Path.Combine(directory.Trim('"'), executable + (OperatingSystem.IsWindows() && !executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? ".exe" : ""));
+                if (File.Exists(candidate)) return candidate;
+            }
+            return executable;
+        }
+    }
     private static string Resolve(string configured, string name)
     {
         if (!string.IsNullOrWhiteSpace(configured)) return configured;

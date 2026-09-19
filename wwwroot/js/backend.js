@@ -22,7 +22,7 @@ export function setupBackend() {
   }
   function render() {
     const busy = starting || (job && !terminal(job.status));
-    $('export').disabled = stopped || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
+    $('export').disabled = stopped || state.busyDownload || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
     $('export').textContent = uploading ? 'Подготовка видео…' : busy ? 'Экспорт выполняется…' : 'Экспортировать видео ↗';
     $('cancel').disabled = stopped || (!uploading && !busy) || cancelRequested;
     $('export-status').textContent = status.text;
@@ -90,23 +90,30 @@ export function setupBackend() {
 
   async function newFile(file) {
     const version = ++revision;
+    const remote = state.remoteMedia;
     preparing = true;
     xhr?.abort(); xhr = null; uploading = null;
     closeEvents();
     const previousMedia = media, previousJob = job;
-    media = null; job = null; cancelRequested = false;
+    media = remote; job = null; cancelRequested = false;
     update({ busyExport: false });
     if (previousJob) await release(`/api/exports/${previousJob.id}`);
     if (previousMedia) await release(`/api/media/${previousMedia.id}`);
     if (version !== revision) return;
-    if (!file) { render(); return; }
+    if (!file) { preparing = false; render(); return; }
     try {
       config = await api('/api/config');
       if (version !== revision) return;
       if (config.error) throw new Error(config.error);
       if (file.size > config.maxUploadBytes) throw new Error(`Файл превышает лимит ${(config.maxUploadBytes / 1024 ** 3).toFixed(1)} ГБ. Лимит задаётся в настройках сервера.`);
       preparing = false;
-      await upload(file, version);
+      if (remote) {
+        media = remote;
+        const serverDuration = remote.info.duration;
+        const duration = state.ready ? Math.min(state.duration, serverDuration) : state.duration;
+        update({ serverDuration, duration, ...(state.ready ? { trim: constrainRange(state.trim, duration) } : {}) });
+        setStatus('Видео по ссылке готово к экспорту.');
+      } else await upload(file, version);
     } catch (error) { if (version === revision) setStatus(error.message, null, false, true); }
     finally { if (version === revision) { preparing = false; render(); } }
   }
@@ -123,11 +130,12 @@ export function setupBackend() {
   }
 
   async function startExport() {
-    if (starting || (job && !terminal(job.status)) || !state.ready || stopped) return;
+    if (starting || state.busyDownload || (job && !terminal(job.status)) || !state.ready || stopped) return;
     const version = revision;
     starting = true; cancelRequested = false; update({ busyExport: true }); render();
     try {
       if (!media) {
+        if (state.remoteMedia) throw new Error('Откройте видео по ссылке заново: исходник недоступен.');
         const result = await upload(state.file, version);
         if (!result || cancelRequested || version !== revision) return;
       }
@@ -168,7 +176,7 @@ export function setupBackend() {
     }
   });
   $('shutdown').addEventListener('click', async () => {
-    if ((uploading || state.busyExport) && !confirm('Остановить приложение? Текущая обработка будет отменена.')) return;
+    if ((uploading || state.busyExport || state.busyDownload) && !confirm('Остановить приложение? Текущая обработка будет отменена.')) return;
     try {
       await api('/api/shutdown', { method: 'POST' });
       stopped = true; xhr?.abort(); closeEvents(); job = null;

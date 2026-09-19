@@ -38,6 +38,9 @@ builder.Services.AddSingleton(mediaOptions);
 builder.Services.AddSingleton<MediaTools>();
 builder.Services.AddSingleton<MediaStore>();
 builder.Services.AddSingleton<ExportService>();
+builder.Services.AddSingleton<DownloadTools>();
+builder.Services.AddSingleton<LinkDownloadService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<LinkDownloadService>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ExportService>());
 var app = builder.Build();
 app.Use(async (context, next) =>
