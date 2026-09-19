@@ -44,6 +44,11 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
   ffmpeg(['-f','lavfi','-i','testsrc2=size=640x360:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','3','-c:v','libx264','-c:a','aac',join(fixtures,'source.mp4')]);
   ffmpeg(['-display_rotation:v:0','90','-i',join(fixtures,'source.mp4'),'-c','copy',join(fixtures,'rotated.mp4')]);
   ffmpeg(['-f','lavfi','-i','testsrc2=size=1920x1080:rate=30','-t','6','-c:v','libx264','-preset','ultrafast',join(fixtures,'large.mp4')]);
+  ffmpeg(['-f','lavfi','-i','color=red:size=160x90:rate=200','-frames:v','1','-c:v','libx264',join(fixtures,'tiny.mp4')]);
+  // Every second has a distinct picture and tone, exposing wrong seek offsets and A/V drift.
+  ffmpeg(['-f','lavfi','-i',"color=red:size=160x90:rate=30:duration=3,drawbox=color=lime:t=fill:enable='between(t,1,1.999)',drawbox=color=blue:t=fill:enable='gte(t,2)'",
+    '-f','lavfi','-i','aevalsrc=if(lt(t\\,1)\\,sin(2*PI*440*t)\\,if(lt(t\\,2)\\,sin(2*PI*880*t)\\,sin(2*PI*1320*t))):s=48000:d=3',
+    '-c:v','libx264','-g','90','-c:a','aac',join(fixtures,'timeline.mp4')]);
   const tempRoot = join(tmpdir(), 'VidCropper');
   const before = new Set(await readdir(tempRoot).catch(() => []));
   const server = await launch();
@@ -103,6 +108,74 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
       const result = await finish(await json(url,'/api/exports','POST',{...request,mediaId:rotated.id,sourceWidth:360,sourceHeight:640,crop:{x:0,y:100,width:360,height:400}}));
       assert.equal(result.result.width,180); assert.equal(result.result.height,200);
       await json(url, `/api/exports/${result.id}`, 'DELETE'); await json(url, `/api/media/${rotated.id}`, 'DELETE');
+    });
+    await t.test('trim exports the selected picture and synchronized audio at fractional boundaries', async () => {
+      const timeline = await upload('timeline.mp4');
+      const base = { ...request, mediaId: timeline.id, sourceWidth: 160, sourceHeight: 90,
+        crop: { x: 0, y: 0, width: 160, height: 90 }, scale: 100, fps: 30 };
+      const cases = [
+        { name: 'legacy-full', start: 0, end: 3, audio: true, bounds: {} },
+        { name: 'explicit-full', start: 0, end: 3, audio: false, bounds: { startSeconds: 0, endSeconds: 3 } },
+        { name: 'start', start: 1.13, end: 3, audio: true, bounds: { startSeconds: 1.13 } },
+        { name: 'end', start: 0, end: 1.77, audio: true, bounds: { endSeconds: 1.77 } },
+        { name: 'middle', start: 0.75, end: 2.25, audio: true, bounds: { startSeconds: 0.75, endSeconds: 2.25 } },
+        { name: 'silent-middle', start: 2.13, end: 2.73, audio: false, bounds: { startSeconds: 2.13, endSeconds: 2.73 } }
+      ];
+      for (const item of cases) {
+        const result = await finish(await json(url, '/api/exports', 'POST', { ...base, audio: item.audio, ...item.bounds }));
+        assert.ok(Math.abs(result.result.duration - (item.end - item.start)) < 0.08, JSON.stringify({ item, result }));
+        assert.equal(result.result.hasAudio, item.audio);
+        const path = join(fixtures, `trim-${item.name}.mp4`);
+        await writeFile(path, Buffer.from(await (await fetch(`${url}/api/exports/${result.id}/download`)).arrayBuffer()));
+        const probe = spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', path], { encoding: 'utf8' });
+        assert.equal(probe.status, 0, probe.stderr);
+        const streams = JSON.parse(probe.stdout).streams;
+        for (const stream of streams) {
+          assert.ok(Math.abs(Number(stream.start_time)) < 0.05, `${item.name}: timestamps start at zero`);
+          assert.ok(Math.abs(Number(stream.duration) - (item.end - item.start)) < 0.08, `${item.name}: stream duration`);
+        }
+        for (const offset of [0.08, item.end - item.start - 0.18]) {
+          const second = Math.floor(item.start + offset);
+          const pixels = spawnSync('ffmpeg', ['-v', 'error', '-ss', String(offset), '-i', path, '-frames:v', '1', '-vf', 'scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1']);
+          assert.equal(pixels.status, 0, pixels.stderr.toString());
+          assert.equal(pixels.stdout.length, 3);
+          assert.ok(pixels.stdout[second] > 180, `${item.name}: expected color ${second}, got ${[...pixels.stdout]}`);
+          if (item.audio) {
+            const samples = spawnSync('ffmpeg', ['-v', 'error', '-ss', String(offset), '-i', path, '-t', '0.05', '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1']);
+            assert.equal(samples.status, 0, samples.stderr.toString());
+            let crossings = 0;
+            for (let i = 4; i < samples.stdout.length; i += 4)
+              if (samples.stdout.readFloatLE(i - 4) <= 0 && samples.stdout.readFloatLE(i) > 0) crossings++;
+            const frequency = crossings / (samples.stdout.length / 4 / 48000);
+            assert.ok(Math.abs(frequency - 440 * (second + 1)) < 30, `${item.name}: wrong audio moment (${frequency} Hz)`);
+          }
+        }
+        await json(url, `/api/exports/${result.id}`, 'DELETE');
+      }
+      await json(url, `/api/media/${timeline.id}`, 'DELETE');
+    });
+    await t.test('invalid trim ranges are rejected before an export starts', async () => {
+      for (const bounds of [{ startSeconds: -1 }, { endSeconds: 4 }, { startSeconds: 2, endSeconds: 1 },
+        { startSeconds: 1, endSeconds: 1 }, { startSeconds: 1, endSeconds: 1.005 }, { endSeconds: 0 },
+        { startSeconds: 'NaN' }, { endSeconds: 'Infinity' }]) {
+        const response = await fetch(url + '/api/exports', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...request, ...bounds }) });
+        assert.equal(response.status, 400, JSON.stringify(bounds));
+      }
+    });
+    await t.test('minimum length selections remain playable including the last frame', async () => {
+      for (const startSeconds of [1.01, 2.99]) {
+        const result = await finish(await json(url, '/api/exports', 'POST', { ...request, startSeconds, endSeconds: startSeconds + 0.01 }));
+        assert.ok(result.result.duration > 0 && result.result.duration < 0.1);
+        await json(url, `/api/exports/${result.id}`, 'DELETE');
+      }
+      const tiny = await upload('tiny.mp4');
+      assert.ok(tiny.info.duration < 0.01);
+      const result = await finish(await json(url, '/api/exports', 'POST', { ...request, mediaId: tiny.id,
+        sourceWidth: 160, sourceHeight: 90, crop: { x: 0, y: 0, width: 160, height: 90 },
+        startSeconds: 0, endSeconds: tiny.info.duration }));
+      assert.ok(result.result.duration > 0 && result.result.duration < 0.1);
+      await json(url, `/api/exports/${result.id}`, 'DELETE');
+      await json(url, `/api/media/${tiny.id}`, 'DELETE');
     });
     await t.test('invalid geometry and cross-origin mutations are rejected', async () => {
       for (const invalid of [{...request,scale:101},{...request,fps:1000},{...request,crop:{x:630,y:0,width:50,height:50}},{...request,sourceWidth:999}]) {

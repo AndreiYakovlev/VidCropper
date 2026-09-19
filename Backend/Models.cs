@@ -16,12 +16,27 @@ public sealed record VideoInfo(int Width, int Height, double Duration, double Fp
     string Codec, long BitRate, bool HasAudio, int StreamIndex, long Size);
 public sealed record CropRegion(int X, int Y, int Width, int Height);
 public sealed record ExportRequest(Guid MediaId, CropRegion? Crop, int Scale, int Fps,
-    bool Audio, int SourceWidth, int SourceHeight);
+    bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null);
+public sealed record TrimRange(double Start, double End)
+{
+    public double Duration => End - Start;
+}
 public sealed record ExportSnapshot(Guid Id, string Status, double Progress, string? Error,
     VideoInfo? Result, string FileName);
 
 public static class ExportSettings
 {
+    public static TrimRange ValidateTrim(ExportRequest request, VideoInfo source)
+    {
+        var start = request.StartSeconds ?? 0;
+        var end = request.EndSeconds ?? source.Duration;
+        var minimum = Math.Min(0.01, source.Duration);
+        if (!double.IsFinite(start) || !double.IsFinite(end) || start < 0 || end > source.Duration ||
+            start >= end || end - start < minimum - 1e-9)
+            throw new MediaException("Недопустимый отрезок видео. Начало должно быть раньше конца, минимальная длина — 0,01 секунды (либо весь файл, если он короче).");
+        return new TrimRange(start, end);
+    }
+
     public static (int Width, int Height) Validate(ExportRequest request, VideoInfo source)
     {
         if (request.SourceWidth != source.Width || request.SourceHeight != source.Height)

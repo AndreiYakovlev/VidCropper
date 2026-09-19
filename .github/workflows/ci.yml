@@ -58,5 +58,5 @@ jobs:
       - name: Build Release
         run: dotnet build -c Release -o artifacts/backend-build
 
-      - name: Test geometry and real FFmpeg exports
-        run: node --test tests/geometry.test.mjs tests/backend.test.mjs
+      - name: Test geometry, trimming and real FFmpeg exports
+        run: node --test tests/geometry.test.mjs tests/trim.test.mjs tests/backend.test.mjs

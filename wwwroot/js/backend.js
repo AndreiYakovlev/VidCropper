@@ -1,6 +1,6 @@
 import { state, subscribe, update } from './state.js';
 import { pixelCrop } from './geometry.mjs';
-import { formatTime } from './player.js';
+import { constrainRange, formatTrimTime } from './trim.mjs';
 
 const terminal = status => ['completed', 'cancelled', 'failed'].includes(status);
 const $ = id => document.getElementById(id);
@@ -38,7 +38,7 @@ export function setupBackend() {
     $('result-details').hidden = !job?.result;
     if (job?.result) {
       const r = job.result;
-      $('result-details').textContent = `${r.width} × ${r.height} · ${r.fps.toFixed(2).replace(/\.00$/, '')} FPS · ${formatTime(r.duration)} · ${(r.size / 1024 / 1024).toFixed(2)} МБ · ${r.hasAudio ? 'со звуком' : 'без звука'}`;
+      $('result-details').textContent = `${r.width} × ${r.height} · ${r.fps.toFixed(2).replace(/\.00$/, '')} FPS · ${formatTrimTime(r.duration)} · ${(r.size / 1024 / 1024).toFixed(2)} МБ · ${r.hasAudio ? 'со звуком' : 'без звука'}`;
     }
     $('source-technical').textContent = media ? `${media.info.fps.toFixed(2).replace(/\.00$/, '')} FPS · ${media.info.codec.toUpperCase()} · ${Math.round(media.info.bitRate / 1000)} кбит/с` : '—';
     $('source-meta-note').textContent = media ? (media.info.hasAudio ? 'Метаданные прочитаны · аудиодорожка найдена' : 'Метаданные прочитаны · без аудиодорожки') :
@@ -75,7 +75,10 @@ export function setupBackend() {
     return task.then(result => {
       if (version !== revision) { void release(`/api/media/${result.id}`); return null; }
       media = result;
-      setStatus('Видео готово к экспорту. Настройте кадр и размер.');
+      const serverDuration = result.info.duration;
+      const duration = state.ready ? Math.min(state.duration, serverDuration) : state.duration;
+      update({ serverDuration, duration, ...(state.ready ? { trim: constrainRange(state.trim, duration) } : {}) });
+      setStatus('Видео готово к экспорту. Выберите отрезок, настройте кадр и размер.');
       return result;
     }).catch(error => {
       if (version === revision) setStatus(error.name === 'AbortError' ? 'Загрузка отменена. Нажмите «Экспортировать», чтобы повторить.' : error.message, null, false, error.name !== 'AbortError');
@@ -132,7 +135,8 @@ export function setupBackend() {
       job = null;
       setStatus('Запуск FFmpeg…', null, true);
       const request = { mediaId: media.id, crop: pixelCrop(state.crop, state), scale: state.scale,
-        fps: state.fps, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height };
+        fps: state.fps, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height,
+        startSeconds: state.trim.start, endSeconds: state.trim.end };
       const snapshot = await api('/api/exports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
       if (version !== revision) { await release(`/api/exports/${snapshot.id}`); return; }
       const cancel = cancelRequested;

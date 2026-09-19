@@ -731,6 +731,19 @@ footer>span:last-child {
 .status-error { color: #ffb6be; }
 #shutdown { margin-left: 12px; white-space: nowrap; }
 #source-technical { overflow-wrap: anywhere; }
+.trim-controls { padding: 16px 20px 0; }
+.trim-values { display: flex; justify-content: space-between; gap: 8px; margin: 14px 0 4px; color: var(--muted); font-size: 10px; }
+.trim-values span { display: flex; flex-direction: column; gap: 3px; }
+.trim-values span:nth-child(2) { text-align: center; }
+.trim-values span:last-child { text-align: right; }
+.trim-values strong { color: var(--text); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.trim-track-space { padding: 18px 22px; }
+.trim-track { position: relative; height: 8px; background: #393440; border-radius: 3px; }
+.trim-selection { position: absolute; left: var(--trim-start, 0%); right: calc(100% - var(--trim-end, 100%)); inset-block: 0; background: var(--purple); }
+.trim-handle { position: absolute; top: 50%; width: 22px; height: 36px; padding: 0; border: 1px solid #c7abff; border-radius: 5px; background: #593d85; color: #eee4ff; font-size: 11px; touch-action: none; user-select: none; cursor: ew-resize; }
+.trim-handle-start { left: var(--trim-start, 0%); transform: translate(-100%, -50%); }
+.trim-handle-end { left: var(--trim-end, 100%); transform: translateY(-50%); }
+.trim-controls .meta-note { margin: 4px 0 0; }
 @media (max-width: 480px) {
   #shutdown { margin-left: 4px; font-size: 10px; }
   .header-right { gap: 5px; }

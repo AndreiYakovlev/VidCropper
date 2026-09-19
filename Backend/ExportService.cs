@@ -33,19 +33,20 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
             try
             {
                 var size = ExportSettings.Validate(request, lease.Source.Info);
+                var trim = ExportSettings.ValidateTrim(request, lease.Source.Info);
                 var id = Guid.NewGuid();
                 var job = new Job(id, Path.Combine(store.Root, $"{id:N}.mp4"),
                     Path.GetFileNameWithoutExtension(lease.Source.Name) + "_cropped.mp4");
                 jobs.Add(id, job);
                 active = true;
-                job.Task = Task.Run(() => RunAsync(job, request, size, lease));
+                job.Task = Task.Run(() => RunAsync(job, request, size, trim, lease));
                 return Snapshot(job);
             }
             catch { lease.Dispose(); throw; }
         }
     }
 
-    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, MediaStore.Lease lease)
+    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, TrimRange trim, MediaStore.Lease lease)
     {
         using (lease)
         using (var linked = CancellationTokenSource.CreateLinkedTokenSource(job.Cancellation.Token, lifetime.ApplicationStopping))
@@ -54,12 +55,16 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
             {
                 var source = lease.Source;
                 var crop = request.Crop!;
+                // Retain the frame covering the seek point, including a sub-frame selection at EOF.
+                // fps trims negative preroll timestamps; eof_action keeps the final partial frame.
                 // Normalize display geometry after autorotation, before applying browser coordinates.
-                var filter = FormattableString.Invariant($"scale={source.Info.Width}:{source.Info.Height}:flags=lanczos,setsar=1,crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y}:exact=1,scale={size.Width}:{size.Height}:flags=lanczos,setsar=1,fps={request.Fps}");
+                var filter = FormattableString.Invariant($"fps={request.Fps}:start_time=0:eof_action=pass,scale={source.Info.Width}:{source.Info.Height}:flags=lanczos,setsar=1,crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y}:exact=1,scale={size.Width}:{size.Height}:flags=lanczos,setsar=1");
                 List<string> arguments = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-                    "-protocol_whitelist", "file,pipe", "-i", source.Path, "-map", $"0:{source.Info.StreamIndex}", "-vf", filter];
+                    "-protocol_whitelist", "file,pipe", "-noaccurate_seek", "-ss", trim.Start.ToString("R", CultureInfo.InvariantCulture),
+                    "-i", source.Path, "-t", trim.Duration.ToString("R", CultureInfo.InvariantCulture),
+                    "-map", $"0:{source.Info.StreamIndex}", "-vf", filter];
                 if (request.Audio && source.Info.HasAudio)
-                    arguments.AddRange(["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k"]);
+                    arguments.AddRange(["-map", "0:a:0?", "-af", "atrim=start=0", "-c:a", "aac", "-b:a", "192k"]);
                 else arguments.Add("-an");
                 arguments.AddRange(["-c:v", "libx264", "-crf", "16", "-preset", "medium", "-pix_fmt", "yuv420p",
                     "-map_metadata", "-1", "-metadata:s:v:0", "rotate=0", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", job.Path]);
@@ -69,7 +74,7 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
                     if (line.StartsWith("out_time_us=", StringComparison.Ordinal) &&
                         double.TryParse(line.AsSpan(12), CultureInfo.InvariantCulture, out var microseconds) && double.IsFinite(microseconds))
                     {
-                        lock (gate) job.Progress = Math.Max(job.Progress, Math.Clamp(microseconds / 1_000_000 / source.Info.Duration * 100, 0, 99.5));
+                        lock (gate) job.Progress = Math.Max(job.Progress, Math.Clamp(microseconds / 1_000_000 / trim.Duration * 100, 0, 99.5));
                     }
                 }, linked.Token);
                 lock (gate) job.Status = "finalizing";

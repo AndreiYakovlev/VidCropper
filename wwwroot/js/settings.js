@@ -1,6 +1,7 @@
 import { state, update, subscribe } from './state.js';
 import { clamp, fitCrop, editCrop, outputSize, pixelCrop } from './geometry.mjs';
 import { formatTime } from './player.js';
+import { formatTrimTime } from './trim.mjs';
 
 const presets = [['free', 'Свободно', null], ['original', 'Оригинал', null], ['1:1', '1:1', 1],
   ['16:9', '16:9', 16 / 9], ['9:16', '9:16', 9 / 16], ['4:3', '4:3', 4 / 3], ['3:4', '3:4', 3 / 4], ['4:5', '4:5', 4 / 5], ['21:9', '21:9', 21 / 9]];
@@ -68,7 +69,7 @@ export function setupSettings() {
     text('file-size', state.file ? sizeLabel(state.file.size) : '—');
     text('source-size', state.ready ? `${state.width} × ${state.height}` : '—');
     text('source-duration', state.ready ? formatTime(state.duration) : '—');
-    text('duration', state.ready ? formatTime(state.duration) : '00:00');
+    text('duration', state.ready ? formatTrimTime(state.trim.end) : '00:00.00');
     const output = crop ? outputSize(crop, state.scale) : null;
     text('output-size', output ? `${output.width} × ${output.height} px` : '— × — px');
     text('summary-crop', crop ? `${crop.width} × ${crop.height}` : '—');
