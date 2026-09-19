@@ -4,7 +4,7 @@
 
 Перетащите файл, выберите область, задайте масштаб и FPS — получите готовый MP4. Видео обрабатывается на вашем компьютере через FFmpeg и не отправляется в интернет.
 
-**Для запуска готовой версии Visual Studio не нужна.** .NET и FFmpeg включены в portable-сборку.
+**Для запуска готовой версии Visual Studio не нужна.** .NET включён в portable-сборку; FFmpeg автоматически загружается при первом запуске.
 
 ## Возможности
 
@@ -21,14 +21,14 @@
 
 Готовая сборка предназначена для **Windows x64**. Нужен браузер с поддержкой кодека вашего видео; для начала подойдёт MP4/H.264.
 
-1. Откройте раздел **Releases** этого репозитория.
-2. Если автор опубликовал готовую сборку, скачайте прикреплённый архив **`VidCropper-win-x64.zip`**.
+1. Откройте [Releases](https://github.com/AndreiYakovlev/VidCropper/releases/latest).
+2. Скачайте [VidCropper-win-x64.zip](https://github.com/AndreiYakovlev/VidCropper/releases/latest/download/VidCropper-win-x64.zip).
 3. Полностью распакуйте архив в отдельную папку.
-4. Запустите **`Start.cmd`** двойным щелчком. После запуска сервера откроется редактор в браузере.
+4. Запустите **`Start.cmd`** двойным щелчком. При первом запуске потребуется интернет: приложение загрузит FFmpeg 7.0.2 с GitHub сборщика Gyan.dev, проверит SHA-256 и распакует инструменты в свою папку `tools`. Затем откроется редактор. Следующие запуски работают без этой загрузки.
 5. Перетащите видео, настройте рамку и нажмите **«Экспортировать видео»**.
 6. После завершения нажмите **«Скачать MP4»**.
 
-Не требуется устанавливать Visual Studio, .NET, FFmpeg, Node.js или Python. Не переносите один `VidCropper.exe` отдельно: для работы нужна вся распакованная папка.
+Не требуется устанавливать Visual Studio, .NET, Node.js или Python. FFmpeg подготавливается автоматически, без изменения PATH и установки служб. Не переносите один `VidCropper.exe` отдельно: для работы нужна вся распакованная папка.
 
 > **`Source code (zip)` в Releases и `Code → Download ZIP` — это исходники, а не готовая программа.** Если portable-архива пока нет, используйте инструкцию ниже.
 
@@ -106,7 +106,7 @@ dotnet run -- --OpenBrowser=true
 | Браузер не открылся | Откройте адрес, напечатанный в консоли сервера. |
 | Порт занят | Запустите `Start.cmd 0` или задайте другой порт. |
 | Команда `dotnet` не найдена | Для исходников установите .NET 10 SDK и заново откройте терминал; portable-сборке он не нужен. |
-| Не найден FFmpeg или ffprobe | В portable-сборке проверьте папку `tools`; при запуске исходников укажите пути в `appsettings.json`. |
+| Не найден FFmpeg или ffprobe | Перезапустите portable-версию через `Start.cmd` с доступом к интернету. Либо скачайте FFmpeg самостоятельно и поместите `ffmpeg.exe` и `ffprobe.exe` в папку `tools` рядом с приложением. Для исходников укажите пути в `appsettings.json`. |
 | Видео не воспроизводится | Кодек должен поддерживаться браузером. Автоматической конвертации для предпросмотра нет. |
 | Экспорт завершился ошибкой | Проверьте свободное место; подробности FFmpeg выводятся в консоль сервера. |
 
@@ -133,23 +133,20 @@ node --test tests/geometry.test.mjs tests/backend.test.mjs
 .\Publish.ps1
 ```
 
-Если FFmpeg не добавлен в `PATH`, передайте пути явно:
+Скрипт создаст папку `artifacts/release/portable` со встроенным .NET runtime, лицензиями и загрузчиком FFmpeg. Сам FFmpeg не включается в публикуемый архив. Выходная папка должна быть пустой; для следующей сборки можно выбрать другую через `-OutputDirectory`.
+
+Создайте архив **до первого запуска этой сборки**, чтобы в него не попали загруженные инструменты:
 
 ```powershell
-.\Publish.ps1 -FfmpegPath "D:\Tools\ffmpeg\bin\ffmpeg.exe" -FfprobePath "D:\Tools\ffmpeg\bin\ffprobe.exe"
+Compress-Archive -Path .\artifacts\release\portable\* -DestinationPath .\artifacts\VidCropper-win-x64.zip -Force
+Get-FileHash .\artifacts\VidCropper-win-x64.zip -Algorithm SHA256
 ```
 
-Скрипт создаст папку `artifacts/portable` со встроенным .NET runtime и FFmpeg. Для упаковки нужны самостоятельные Windows x64 exe FFmpeg и ffprobe.
+Создайте релиз в **GitHub → Releases → Draft a new release** и прикрепите ZIP как файл релиза. Папка `artifacts` исключена из Git: обычный push исходников не публикует готовую программу.
 
-После проверки сборки создайте архив:
+## Лицензия
 
-```powershell
-Compress-Archive -Path .\artifacts\portable\* -DestinationPath .\artifacts\VidCropper-win-x64.zip -Force
-```
-
-Создайте релиз в **GitHub → Releases → Draft a new release** и прикрепите этот ZIP как файл релиза. Папка `artifacts` исключена из Git: обычный push исходников не публикует готовую программу.
-
-При распространении сборки с FFmpeg учитывайте [лицензионные условия используемой сборки](https://ffmpeg.org/legal.html), включая предоставление соответствующих исходников. `Publish.ps1` копирует найденные LICENSE и README FFmpeg, но сам по себе не подготавливает полный пакет выполнения лицензионных условий.
+Код VidCropper распространяется под [MIT](LICENSE). У .NET, FFmpeg и их зависимостей собственные лицензии: см. [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Публичный архив не включает FFmpeg; его сборка загружается напрямую у поставщика при первом запуске.
 
 <details>
 <summary>HTTP API для разработки</summary>

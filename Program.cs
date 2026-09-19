@@ -15,6 +15,20 @@ if (!int.TryParse(portValue, out var port) || port is < 0 or > 65535)
 }
 var mediaOptions = builder.Configuration.GetSection("Media").Get<MediaOptions>() ?? new();
 if (mediaOptions.MaxUploadBytes < 1) { Console.Error.WriteLine("Media:MaxUploadBytes должен быть положительным."); return 1; }
+if (builder.Configuration.GetValue<bool>("InstallTools"))
+{
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+    ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+    Console.CancelKeyPress += cancel;
+    try { await MediaToolInstaller.EnsureAsync(AppContext.BaseDirectory, cancellation.Token); }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Не удалось подготовить FFmpeg: {exception.Message}");
+        Console.Error.WriteLine("Проверьте интернет или вручную поместите ffmpeg.exe и ffprobe.exe в папку tools. Инструкция — в README.md.");
+        return 1;
+    }
+    finally { Console.CancelKeyPress -= cancel; }
+}
 builder.WebHost.UseKestrel(options =>
 {
     options.Listen(System.Net.IPAddress.Loopback, port);
