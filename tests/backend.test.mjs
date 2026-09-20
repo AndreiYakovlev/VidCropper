@@ -85,12 +85,37 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
       const response = await fetch(`${url}/api/exports/${result.id}/download`);
       assert.equal(response.status,200);
       const bytes = Buffer.from(await response.arrayBuffer()); assert.equal(bytes.length,result.result.size);
+      assert.match(bytes.toString('latin1'), /crf=16\.0\b/, 'omitted quality retains CRF 16');
       const path = join(fixtures,'result.mp4'); await writeFile(path,bytes);
       const probe = spawnSync('ffprobe',['-v','error','-show_streams','-of','json',path],{encoding:'utf8'});
       assert.equal(probe.status,0); const stream=JSON.parse(probe.stdout).streams[0];
       assert.equal(stream.codec_name,'h264'); assert.equal(stream.pix_fmt,'yuv420p'); assert.equal(stream.width,178);
       await json(url, `/api/exports/${result.id}`, 'DELETE');
       assert.equal((await fetch(`${url}/api/exports/${result.id}/download`)).status,404);
+    });
+    await t.test('quality presets reach x264 and preserve output properties', async () => {
+      const sizes = new Map();
+      for (const [quality, crf] of [['maximum',16], ['high',20], ['balanced',23], ['compact',28], [null,16]]) {
+        const result = await finish(await json(url, '/api/exports', 'POST', { ...request, quality, audio:true,
+          crop:{x:0,y:0,width:640,height:360}, scale:100, fps:30 }));
+        assert.equal(result.result.width,640); assert.equal(result.result.height,360);
+        assert.equal(result.result.fps,30); assert.equal(result.result.hasAudio,true);
+        assert.ok(Math.abs(result.result.duration - 3) < 0.1);
+        const response = await fetch(`${url}/api/exports/${result.id}/download`);
+        assert.equal(response.status,200);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        // x264's SEI records the actual encoding settings, independently of our argument builder.
+        assert.ok(bytes.toString('latin1').includes(`crf=${crf}.0`), `actual CRF for ${quality}`);
+        sizes.set(quality, bytes.length);
+        await json(url, `/api/exports/${result.id}`, 'DELETE');
+      }
+      assert.ok(sizes.get('compact') < sizes.get('maximum'));
+      t.diagnostic(`CRF 16: ${sizes.get('maximum')} bytes; CRF 28: ${sizes.get('compact')} bytes`);
+      for (const quality of ['unknown', '', 'MAXIMUM', 16]) {
+        const response = await fetch(url + '/api/exports', { method:'POST',
+          headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify({...request,quality}) });
+        assert.equal(response.status,400, `invalid quality ${quality}`);
+      }
     });
     await t.test('audio is preserved when requested', async () => {
       const result = await finish(await json(url, '/api/exports', 'POST', { ...request, audio:true }));

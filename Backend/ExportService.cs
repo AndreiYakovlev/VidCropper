@@ -34,19 +34,20 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
             {
                 var size = ExportSettings.Validate(request, lease.Source.Info);
                 var trim = ExportSettings.ValidateTrim(request, lease.Source.Info);
+                var crf = ExportSettings.ResolveCrf(request.Quality);
                 var id = Guid.NewGuid();
                 var job = new Job(id, Path.Combine(store.Root, $"{id:N}.mp4"),
                     Path.GetFileNameWithoutExtension(lease.Source.Name) + "_cropped.mp4");
                 jobs.Add(id, job);
                 active = true;
-                job.Task = Task.Run(() => RunAsync(job, request, size, trim, lease));
+                job.Task = Task.Run(() => RunAsync(job, request, size, trim, crf, lease));
                 return Snapshot(job);
             }
             catch { lease.Dispose(); throw; }
         }
     }
 
-    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, TrimRange trim, MediaStore.Lease lease)
+    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, TrimRange trim, int crf, MediaStore.Lease lease)
     {
         using (lease)
         using (var linked = CancellationTokenSource.CreateLinkedTokenSource(job.Cancellation.Token, lifetime.ApplicationStopping))
@@ -66,7 +67,7 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
                 if (request.Audio && source.Info.HasAudio)
                     arguments.AddRange(["-map", "0:a:0?", "-af", "atrim=start=0", "-c:a", "aac", "-b:a", "192k"]);
                 else arguments.Add("-an");
-                arguments.AddRange(["-c:v", "libx264", "-crf", "16", "-preset", "medium", "-pix_fmt", "yuv420p",
+                arguments.AddRange(["-c:v", "libx264", "-crf", crf.ToString(CultureInfo.InvariantCulture), "-preset", "medium", "-pix_fmt", "yuv420p",
                     "-map_metadata", "-1", "-metadata:s:v:0", "rotate=0", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", job.Path]);
                 lock (gate) job.Status = "running";
                 await tools.RunAsync(false, arguments, line =>

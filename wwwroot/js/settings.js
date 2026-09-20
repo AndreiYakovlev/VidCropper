@@ -41,13 +41,14 @@ export function setupSettings() {
   });
   $('scale-number').addEventListener('blur', render);
   $('fps').addEventListener('change', event => update({ fps: Number(event.target.value) }));
+  $('quality').addEventListener('change', event => update({ quality: event.target.value }));
   $('audio').addEventListener('change', event => update({ audio: event.target.checked }));
   for (const mode of ['source', 'crop']) $(mode + '-view').addEventListener('click', () => update({ view: mode }));
 
   function render() {
     $('audio').checked = state.audio;
     $('crop-settings').disabled = !state.ready || state.busyExport;
-    for (const id of ['scale', 'scale-number', 'fps', 'audio', 'open-top', 'open-empty']) $(id).disabled = state.busyExport;
+    for (const id of ['scale', 'scale-number', 'fps', 'quality', 'audio', 'open-top', 'open-empty']) $(id).disabled = state.busyExport;
     for (const id of ['play', 'seek', 'mute', 'source-view', 'crop-view']) $(id).disabled = !state.ready;
     for (const mode of ['source', 'crop']) {
       $(mode + '-view').classList.toggle('active', state.view === mode);
@@ -75,6 +76,8 @@ export function setupSettings() {
     text('summary-crop', crop ? `${crop.width} × ${crop.height}` : '—');
     text('summary-scale', `${state.scale}%`);
     text('summary-video', `H.264 · ${state.fps} FPS`);
+    $('quality').value = state.quality;
+    text('summary-quality', $('quality').selectedOptions[0].textContent);
     text('summary-audio', state.audio ? 'Сохранить при наличии' : 'Без звука');
   }
   subscribe(render); render();

@@ -143,7 +143,7 @@ export function setupBackend() {
       job = null;
       setStatus('Запуск FFmpeg…', null, true);
       const request = { mediaId: media.id, crop: pixelCrop(state.crop, state), scale: state.scale,
-        fps: state.fps, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height,
+        fps: state.fps, quality: state.quality, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height,
         startSeconds: state.trim.start, endSeconds: state.trim.end };
       const snapshot = await api('/api/exports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
       if (version !== revision) { await release(`/api/exports/${snapshot.id}`); return; }

@@ -16,7 +16,8 @@ public sealed record VideoInfo(int Width, int Height, double Duration, double Fp
     string Codec, long BitRate, bool HasAudio, int StreamIndex, long Size);
 public sealed record CropRegion(int X, int Y, int Width, int Height);
 public sealed record ExportRequest(Guid MediaId, CropRegion? Crop, int Scale, int Fps,
-    bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null);
+    bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null,
+    string? Quality = null);
 public sealed record TrimRange(double Start, double End)
 {
     public double Duration => End - Start;
@@ -26,6 +27,15 @@ public sealed record ExportSnapshot(Guid Id, string Status, double Progress, str
 
 public static class ExportSettings
 {
+    public static int ResolveCrf(string? quality) => quality switch
+    {
+        null or "maximum" => 16,
+        "high" => 20,
+        "balanced" => 23,
+        "compact" => 28,
+        _ => throw new MediaException("Недопустимое качество видео.")
+    };
+
     public static TrimRange ValidateTrim(ExportRequest request, VideoInfo source)
     {
         var start = request.StartSeconds ?? 0;
