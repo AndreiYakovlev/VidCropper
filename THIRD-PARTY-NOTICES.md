@@ -29,3 +29,15 @@ Portable-сборка содержит .NET 10 и ASP.NET Core, предоста
 - Deno: https://github.com/denoland/deno — MIT и лицензии включённых зависимостей: https://github.com/denoland/deno/blob/main/LICENSE.md
 
 При самостоятельном распространении архива с включёнными инструментами необходимо выполнить условия их лицензий. MIT-лицензия VidCropper их не заменяет.
+
+## AI Upscaler
+
+AI-исполнители скачиваются по требованию непосредственно из закреплённых релизов авторов и запускаются отдельными неизменёнными процессами. Бинарные файлы и веса не включены в portable-архив VidCropper. Их лицензии не заменяются лицензией проекта.
+
+- **SPAN-ncnn-vulkan**, TNTwise / Upscayl: GNU AGPL v3, файл `LICENSE` сохраняется из архива. Соответствующие исходники: https://github.com/TNTwise/SPAN-ncnn-vulkan/tree/20240831-055257 .
+- **Nomos8k SPAN OTF Weak / Medium / Strong**, Helaman (Philip Hofmann): CC BY 4.0; преобразованные NCNN-веса поставлены в архиве SPAN. Авторские карточки: https://openmodeldb.info/models/4x-Nomos8k-span-otf-weak , https://openmodeldb.info/models/4x-Nomos8k-span-otf-medium , https://openmodeldb.info/models/4x-Nomos8k-span-otf-strong . Условия: https://creativecommons.org/licenses/by/4.0/ . VidCropper веса не изменяет.
+- **Real-ESRGAN / AnimeVideo v3**, Xintao Wang и участники: BSD 3-Clause; https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0 .
+- **Real-ESRGAN-ncnn-vulkan**: MIT; https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/tree/v0.2.0 . Оригинальные тексты лицензий находятся в `licenses/ai` и копируются рядом с установленным пакетом.
+- NCNN и включённые runtime-компоненты сохраняют собственные лицензии. Источник NCNN: https://github.com/Tencent/ncnn .
+
+Рядом с каждым установленным пакетом создаётся `SOURCES.txt` со ссылками и атрибуцией. При самостоятельном распространении сборок с включёнными AI-пакетами необходимо выполнить условия лицензий соответствующих исполнителей, моделей и зависимостей, включая требования к исходному коду. Отдельный процесс не отменяет лицензионных обязательств.

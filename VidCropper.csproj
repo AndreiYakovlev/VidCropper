@@ -7,6 +7,12 @@
     <Authors>Andrei Yakovlev</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/AndreiYakovlev/VidCropper</RepositoryUrl>
-    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**;downloads/**;output/**;temp/**</DefaultItemExcludes>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="licenses/ai/*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Compile Remove="tests/**/*.cs" />
+    <Content Remove="tests/**;tools/**;artifacts/**" />
+    <None Remove="tools/**" />
+  </ItemGroup>
 </Project>

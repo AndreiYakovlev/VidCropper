@@ -6,12 +6,13 @@ public sealed class MediaStore(ILogger<MediaStore> logger) : IDisposable
     private readonly Dictionary<Guid, Source> sources = [];
     public string Root { get; } = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "VidCropper", Guid.NewGuid().ToString("N"))).FullName;
 
-    public sealed class Source(Guid id, string path, string name, VideoInfo info)
+    public sealed class Source(Guid id, string path, string name, VideoInfo info, bool deleteOnRelease = true)
     {
         public Guid Id { get; } = id;
         public string Path { get; } = path;
         public string Name { get; } = name;
         public VideoInfo Info { get; } = info;
+        public bool DeleteOnRelease { get; } = deleteOnRelease;
         public int Readers { get; set; }
         public bool DeleteRequested { get; set; }
     }
@@ -23,9 +24,9 @@ public sealed class MediaStore(ILogger<MediaStore> logger) : IDisposable
         public void Dispose() => Interlocked.Exchange(ref onRelease, null)?.Invoke();
     }
 
-    public Source Add(Guid id, string path, string name, VideoInfo info)
+    public Source Add(Guid id, string path, string name, VideoInfo info, bool deleteOnRelease = true)
     {
-        var source = new Source(id, path, name, info);
+        var source = new Source(id, path, name, info, deleteOnRelease);
         lock (gate) sources.Add(id, source);
         return source;
     }
@@ -58,7 +59,11 @@ public sealed class MediaStore(ILogger<MediaStore> logger) : IDisposable
         }
     }
 
-    private void Remove(Source source) { TryDelete(source.Path); sources.Remove(source.Id); }
+    private void Remove(Source source)
+    {
+        if (source.DeleteOnRelease) TryDelete(source.Path);
+        sources.Remove(source.Id);
+    }
 
     public void TryDelete(string path)
     {

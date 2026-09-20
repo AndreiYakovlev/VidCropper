@@ -3,6 +3,9 @@
 **/obj/
 /artifacts/
 /tools/
+/downloads/
+/output/
+/temp/
 /TestResults/
 
 # Локальные настройки IDE

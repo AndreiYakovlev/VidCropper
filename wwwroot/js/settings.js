@@ -1,3 +1,4 @@
+import { upscaleSize } from './upscale.mjs';
 import { state, update, subscribe } from './state.js';
 import { clamp, fitCrop, editCrop, outputSize, pixelCrop } from './geometry.mjs';
 import { formatTime } from './player.js';
@@ -46,9 +47,12 @@ export function setupSettings() {
   for (const mode of ['source', 'crop']) $(mode + '-view').addEventListener('click', () => update({ view: mode }));
 
   function render() {
+    const busy = state.busyExport || state.busyAi;
     $('audio').checked = state.audio;
-    $('crop-settings').disabled = !state.ready || state.busyExport;
-    for (const id of ['scale', 'scale-number', 'fps', 'quality', 'audio', 'open-top', 'open-empty']) $(id).disabled = state.busyExport;
+    $('crop-settings').disabled = !state.ready || busy;
+    for (const id of ['scale', 'scale-number', 'fps', 'quality', 'audio', 'open-top', 'open-empty']) $(id).disabled = busy;
+    for (const id of ['scale', 'scale-number']) $(id).disabled = busy || state.aiEnabled;
+    $('scale-ai-note').hidden = !state.aiEnabled;
     for (const id of ['play', 'seek', 'mute', 'source-view', 'crop-view']) $(id).disabled = !state.ready;
     for (const mode of ['source', 'crop']) {
       $(mode + '-view').classList.toggle('active', state.view === mode);
@@ -71,10 +75,13 @@ export function setupSettings() {
     text('source-size', state.ready ? `${state.width} × ${state.height}` : '—');
     text('source-duration', state.ready ? formatTime(state.duration) : '—');
     text('duration', state.ready ? formatTrimTime(state.trim.end) : '00:00.00');
-    const output = crop ? outputSize(crop, state.scale) : null;
+    const output = crop ? (state.aiEnabled ? upscaleSize(crop, state.aiScale) : outputSize(crop, state.scale)) : null;
     text('output-size', output ? `${output.width} × ${output.height} px` : '— × — px');
     text('summary-crop', crop ? `${crop.width} × ${crop.height}` : '—');
-    text('summary-scale', `${state.scale}%`);
+    text('summary-scale', state.aiEnabled ? `×${state.aiScale}` : `${state.scale}%`);
+    text('summary-size', output ? `${output.width} × ${output.height}` : '—');
+    $('summary-ai-row').hidden = !state.aiEnabled;
+    text('summary-ai', state.aiModels.find(model => model.id === state.aiModel)?.name ?? state.aiModel);
     text('summary-video', `H.264 · ${state.fps} FPS`);
     $('quality').value = state.quality;
     text('summary-quality', $('quality').selectedOptions[0].textContent);

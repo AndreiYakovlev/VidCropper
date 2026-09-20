@@ -61,7 +61,7 @@ export function setupPlayer() {
   }
   function open(file, remoteMedia = null) {
     if (!file) return;
-    if (state.busyExport) { showError('Дождитесь завершения экспорта или отмените его перед заменой видео.'); return; }
+    if ((state.busyExport || state.busyAi)) { showError('Дождитесь завершения экспорта или отмените его перед заменой видео.'); return; }
     const version = ++generation;
     video.onloadedmetadata = null; video.onerror = null;
     clearSource(); error.hidden = true;
@@ -110,7 +110,7 @@ export function setupPlayer() {
     try { await video.play(); } catch { showError('Не удалось начать воспроизведение. Попробуйте другой видеофайл.'); }
   });
   for (const event of ['play', 'pause', 'ended']) video.addEventListener(event, () => {
-    play.textContent = video.paused ? '▶' : 'Ⅱ'; play.setAttribute('aria-label', video.paused ? 'Воспроизвести' : 'Пауза');
+    play.textContent = video.paused ? '▶' : '⏸'; play.setAttribute('aria-label', video.paused ? 'Воспроизвести' : 'Пауза');
   });
   video.addEventListener('play', () => { if (animationFrame === null) animationFrame = requestAnimationFrame(tick); });
   video.addEventListener('pause', () => { cancelAnimationFrame(animationFrame); animationFrame = null; });

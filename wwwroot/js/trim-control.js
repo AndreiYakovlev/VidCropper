@@ -8,7 +8,7 @@ export function setupTrim(video) {
   let drag = null;
 
   function change(boundary, value) {
-    if (!state.ready || state.busyExport) return;
+    if (!state.ready || (state.busyExport || state.busyAi)) return;
     video.pause();
     const trim = moveBoundary(state.trim, boundary, value, state.duration);
     update({ trim });
@@ -18,7 +18,7 @@ export function setupTrim(video) {
   for (const [index, handle] of handles.entries()) {
     const boundary = index === 0 ? 'start' : 'end';
     handle.addEventListener('pointerdown', event => {
-      if (!state.ready || state.busyExport || event.button !== 0 || drag) return;
+      if (!state.ready || (state.busyExport || state.busyAi) || event.button !== 0 || drag) return;
       video.pause();
       handle.focus();
       drag = { pointerId: event.pointerId, boundary, x: event.clientX, value: state.trim[boundary] };
@@ -55,7 +55,7 @@ export function setupTrim(video) {
     });
   }
   reset.addEventListener('click', () => {
-    if (!state.ready || state.busyExport) return;
+    if (!state.ready || (state.busyExport || state.busyAi)) return;
     video.pause();
     update({ trim: fullRange(state.duration) });
     video.currentTime = 0;
@@ -68,14 +68,14 @@ export function setupTrim(video) {
     track.style.setProperty('--trim-end', `${duration ? trim.end / duration * 100 : 100}%`);
     for (const [index, handle] of handles.entries()) {
       const boundary = index === 0 ? 'start' : 'end';
-      handle.disabled = !state.ready || state.busyExport;
+      handle.disabled = !state.ready || (state.busyExport || state.busyAi);
       handle.setAttribute('aria-valuemin', index === 0 ? 0 : trim.start + gap);
       handle.setAttribute('aria-valuemax', index === 0 ? Math.max(0, trim.end - gap) : duration);
       handle.setAttribute('aria-valuenow', trim[boundary]);
       handle.setAttribute('aria-valuetext', formatTrimTime(trim[boundary]));
       document.getElementById(`trim-${boundary}-time`).textContent = state.ready ? formatTrimTime(trim[boundary]) : '—';
     }
-    reset.disabled = !state.ready || state.busyExport;
+    reset.disabled = !state.ready || (state.busyExport || state.busyAi);
     const length = state.ready ? formatTrimTime(trim.end - trim.start) : '—';
     document.getElementById('trim-length').textContent = length;
     document.getElementById('summary-duration').textContent = length;

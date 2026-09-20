@@ -1,4 +1,5 @@
 import { state, subscribe, update } from './state.js';
+import { processingTimeText } from './processing-time.mjs';
 import { pixelCrop } from './geometry.mjs';
 import { constrainRange, formatTrimTime } from './trim.mjs';
 
@@ -12,6 +13,13 @@ async function api(path, options = {}) {
   return body;
 }
 
+export function exportRequest() {
+  return { mediaId: state.mediaId, crop: pixelCrop(state.crop, state), scale: state.scale,
+    fps: state.fps, quality: state.quality, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height,
+    startSeconds: state.trim.start, endSeconds: state.trim.end,
+    upscale: state.aiEnabled ? { modelId: state.aiModel, scale: state.aiScale } : null };
+}
+
 export function setupBackend() {
   let observedFile = null, revision = 0, media = null, job = null, xhr = null, events = null;
   let uploading = null, preparing = false, starting = false, cancelRequested = false, config = null, stopped = false;
@@ -22,7 +30,7 @@ export function setupBackend() {
   }
   function render() {
     const busy = starting || (job && !terminal(job.status));
-    $('export').disabled = stopped || state.busyDownload || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
+    $('export').disabled = state.busyAi || state.busyPreview || (state.aiEnabled && !state.aiReady) || stopped || state.busyDownload || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
     $('export').textContent = uploading ? 'Подготовка видео…' : busy ? 'Экспорт выполняется…' : 'Экспортировать видео ↗';
     $('cancel').disabled = stopped || (!uploading && !busy) || cancelRequested;
     $('export-status').textContent = status.text;
@@ -77,7 +85,7 @@ export function setupBackend() {
       media = result;
       const serverDuration = result.info.duration;
       const duration = state.ready ? Math.min(state.duration, serverDuration) : state.duration;
-      update({ serverDuration, duration, ...(state.ready ? { trim: constrainRange(state.trim, duration) } : {}) });
+      update({ mediaId: result.id, serverDuration, duration, ...(state.ready ? { trim: constrainRange(state.trim, duration) } : {}) });
       setStatus('Видео готово к экспорту. Выберите отрезок, настройте кадр и размер.');
       return result;
     }).catch(error => {
@@ -96,7 +104,8 @@ export function setupBackend() {
     closeEvents();
     const previousMedia = media, previousJob = job;
     media = remote; job = null; cancelRequested = false;
-    update({ busyExport: false });
+    $('export-timing').textContent = '';
+    update({ busyExport: false, mediaId: remote?.id ?? null });
     if (previousJob) await release(`/api/exports/${previousJob.id}`);
     if (previousMedia) await release(`/api/media/${previousMedia.id}`);
     if (version !== revision) return;
@@ -120,19 +129,22 @@ export function setupBackend() {
 
   function accept(snapshot) {
     job = snapshot;
+    $('export-timing').textContent = processingTimeText(job);
     const finished = terminal(job.status);
     update({ busyExport: !finished });
     if (finished) { closeEvents(); cancelRequested = false; }
-    const labels = { queued: 'Подготовка экспорта…', running: `Экспорт: ${job.progress.toFixed(1)}%`,
-      finalizing: 'Проверка готового файла…', completed: 'Экспорт завершён. Видео готово к скачиванию.',
+    const labels = { queued: 'Подготовка экспорта…', running: `${job.stage ?? 'Экспорт'}: ${(job.stageProgress ?? job.progress).toFixed(1)}%${job.framesTotal ? ` · ${job.framesDone}/${job.framesTotalEstimated ? '≈' : ''}${job.framesTotal} кадров` : ''}`,
+      finalizing: 'Проверка готового файла…', completed: 'Экспорт завершён. Видео сохранено в output.',
       cancelled: 'Экспорт отменён. Незавершённый файл удалён.', failed: job.error ?? 'Ошибка экспорта.' };
-    setStatus(labels[job.status], job.status === 'cancelled' || job.status === 'failed' ? null : job.progress, !finished, job.status === 'failed');
+    setStatus(labels[job.status], job.status === 'cancelled' || job.status === 'failed' ? null :
+      job.status === 'running' ? (job.stageProgress ?? job.progress) : job.progress, !finished, job.status === 'failed');
   }
 
   async function startExport() {
-    if (starting || state.busyDownload || (job && !terminal(job.status)) || !state.ready || stopped) return;
+    if (state.busyAi || state.busyPreview || starting || state.busyDownload || (job && !terminal(job.status)) || !state.ready || stopped) return;
     const version = revision;
     starting = true; cancelRequested = false; update({ busyExport: true }); render();
+    $('export-timing').textContent = '';
     try {
       if (!media) {
         if (state.remoteMedia) throw new Error('Откройте видео по ссылке заново: исходник недоступен.');
@@ -142,9 +154,7 @@ export function setupBackend() {
       if (job) await release(`/api/exports/${job.id}`);
       job = null;
       setStatus('Запуск FFmpeg…', null, true);
-      const request = { mediaId: media.id, crop: pixelCrop(state.crop, state), scale: state.scale,
-        fps: state.fps, quality: state.quality, audio: state.audio, sourceWidth: state.width, sourceHeight: state.height,
-        startSeconds: state.trim.start, endSeconds: state.trim.end };
+      const request = exportRequest();
       const snapshot = await api('/api/exports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
       if (version !== revision) { await release(`/api/exports/${snapshot.id}`); return; }
       const cancel = cancelRequested;

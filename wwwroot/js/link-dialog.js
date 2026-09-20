@@ -79,7 +79,7 @@ export function setupLinkDialog(openRemote) {
     finally { if (operationId === id) { operationId = null; stopPolling(); } }
   }
   async function download(install = false) {
-    if (controller || state.busyExport || !input.value.trim()) return;
+    if (controller || (state.busyExport || state.busyAi) || !input.value.trim()) return;
     const version = ++revision;
     const current = new AbortController(); controller = current;
     const url = input.value.trim();
@@ -133,7 +133,7 @@ export function setupLinkDialog(openRemote) {
     }
   }
   for (const button of openers) button.addEventListener('click', () => {
-    if (state.busyExport || dialog.open) return;
+    if ((state.busyExport || state.busyAi) || dialog.open) return;
     opener = button;
     failure.hidden = true;
     dialog.showModal(); showForm();
@@ -174,8 +174,8 @@ export function setupLinkDialog(openRemote) {
     }
   });
   function render() {
-    for (const button of openers) button.disabled = state.busyExport || state.busyDownload;
-    if (state.busyExport && dialog.open) dialog.close();
+    for (const button of openers) button.disabled = (state.busyExport || state.busyAi) || state.busyDownload;
+    if ((state.busyExport || state.busyAi) && dialog.open) dialog.close();
   }
   window.addEventListener('pagehide', stop);
   subscribe(render); render();

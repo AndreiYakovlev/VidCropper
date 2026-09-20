@@ -39,21 +39,21 @@ export function setupCrop(video) {
   video.addEventListener('play', () => { cancelAnimationFrame(animation); tick(); });
   for (const event of ['seeked', 'loadeddata', 'pause']) video.addEventListener(event, draw);
   frame.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || !state.ready || state.busyExport || state.view !== 'source') return;
+    if (event.button !== 0 || !state.ready || (state.busyExport || state.busyAi) || state.view !== 'source') return;
     event.preventDefault(); frame.focus();
     drag = { id: event.pointerId, x: event.clientX, y: event.clientY, crop: { ...state.crop },
       handle: event.target.dataset.handle, scale: surface.clientWidth / state.width };
     frame.setPointerCapture(event.pointerId);
   });
   frame.addEventListener('pointermove', event => {
-    if (!drag || event.pointerId !== drag.id || !state.ready || state.busyExport) return;
+    if (!drag || event.pointerId !== drag.id || !state.ready || (state.busyExport || state.busyAi)) return;
     const dx = (event.clientX - drag.x) / drag.scale, dy = (event.clientY - drag.y) / drag.scale;
     update({ crop: drag.handle ? resizeCrop(drag.crop, drag.handle, dx, dy, state, state.ratio) : moveCrop(drag.crop, dx, dy, state) });
   });
   for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) frame.addEventListener(event, () => { drag = null; });
   frame.addEventListener('keydown', event => {
     const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
-    if (!direction || !state.ready || state.busyExport) return;
+    if (!direction || !state.ready || (state.busyExport || state.busyAi)) return;
     event.preventDefault(); const step = event.shiftKey ? 10 : 1;
     update({ crop: moveCrop(state.crop, direction[0] * step, direction[1] * step, state) });
   });

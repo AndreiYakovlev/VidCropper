@@ -9,6 +9,18 @@ public static class Api
 
     public static void MapMediaApi(this WebApplication app, MediaOptions options)
     {
+        app.MapGet("/api/ai/catalog", (AiPackages packages) => Results.Ok(packages.Status()));
+        app.MapPost("/api/ai/models/{modelId}/{action}", (string modelId, string action, AiPackages packages) => Results.Ok(packages.Start(modelId, action)));
+        app.MapGet("/api/ai/operations/{id:guid}", (Guid id, AiPackages packages) => Results.Ok(packages.Get(id)));
+        app.MapPost("/api/ai/operations/{id:guid}/cancel", async (Guid id, AiPackages packages) => Results.Ok(await packages.CancelAsync(id)));
+        app.MapPost("/api/ai/previews", (AiPreviewRequest request, ExportService service) =>
+            Results.Ok(service.Start(request.Export ?? throw new MediaException("Не указаны настройки пробы."), request.Position)));
+        app.MapGet("/api/ai/previews/{id:guid}/{variant}", (Guid id, string variant, ExportService service) =>
+        {
+            if (variant is not ("before" or "after") || !service.Get(id).Preview) throw new MediaException("Проба не найдена.", 404);
+            var result = service.OpenResult(id, variant == "before");
+            return Results.File(result.Stream, "video/mp4", enableRangeProcessing: true);
+        });
         app.MapGet("/api/link-tools", (DownloadTools tools) => Results.Ok(tools.Status()));
         app.MapPost("/api/link-tools/{id:guid}/install", async (Guid id, LinkDownloadService service, CancellationToken ct) =>
             Results.Ok(new { installed = await service.InstallAsync(id, ct) }));

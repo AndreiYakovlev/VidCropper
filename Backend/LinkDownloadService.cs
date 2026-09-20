@@ -23,7 +23,8 @@ public sealed record LinkProgress(Guid Id, string Message, double? Progress);
 public sealed record DownloadedMedia(Guid Id, string Name, VideoInfo Info);
 
 public sealed class LinkDownloadService(DownloadTools downloader, MediaTools tools, MediaStore store,
-    MediaOptions options, IHostApplicationLifetime lifetime, ILogger<LinkDownloadService> logger) : IHostedService
+    MediaOptions options, IHostApplicationLifetime lifetime, ILogger<LinkDownloadService> logger,
+    IWebHostEnvironment environment) : IHostedService
 {
     private readonly object gate = new();
     private Operation? active;
@@ -247,8 +248,15 @@ public sealed class LinkDownloadService(DownloadTools downloader, MediaTools too
             var safeName = string.Concat(title.Select(c => Path.GetInvalidFileNameChars().Contains(c) || char.IsControl(c) ? '_' : c)).Trim().TrimEnd('.');
             if (string.IsNullOrWhiteSpace(safeName)) safeName = "video";
             if (safeName.Length > 150) safeName = safeName[..150];
-            var name = safeName + ".mp4";
-            store.Add(mediaId, destination, name, info);
+            // Windows reserves these names even with an extension.
+            if (System.Text.RegularExpressions.Regex.IsMatch(safeName.Split('.')[0].TrimEnd(),
+                @"^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                safeName = "_" + safeName;
+            report("Сохранение в downloads…", null);
+            var savedPath = await SaveDownloadAsync(destination, safeName, ct);
+            var name = Path.GetFileName(savedPath);
+            store.Add(mediaId, savedPath, name, info, deleteOnRelease: false);
+            store.TryDelete(destination);
             return new(mediaId, name, info);
         }
         catch { store.TryDelete(destination); throw; }
@@ -258,6 +266,27 @@ public sealed class LinkDownloadService(DownloadTools downloader, MediaTools too
             catch (IOException exception) { logger.LogWarning(exception, "Не удалось очистить загрузку {Id}", mediaId); }
             catch (UnauthorizedAccessException exception) { logger.LogWarning(exception, "Не удалось очистить загрузку {Id}", mediaId); }
         }
+    }
+
+    private async Task<string> SaveDownloadAsync(string source, string name, CancellationToken ct)
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(environment.ContentRootPath, "downloads")).FullName;
+        var staging = Path.Combine(folder, $".{Guid.NewGuid():N}.part");
+        try
+        {
+            // Stage on the destination volume, then publish only a complete, validated MP4.
+            await using (var input = File.OpenRead(source))
+            await using (var output = new FileStream(staging, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
+                await input.CopyToAsync(output, ct);
+            ct.ThrowIfCancellationRequested();
+            for (var suffix = 0; ; suffix++)
+            {
+                var path = Path.Combine(folder, name + (suffix == 0 ? "" : $" ({suffix})") + ".mp4");
+                try { File.Move(staging, path, overwrite: false); return path; }
+                catch (IOException) when (File.Exists(path) || Directory.Exists(path)) { }
+            }
+        }
+        finally { store.TryDelete(staging); }
     }
 
     private async Task NormalizeAsync(string source, string result, Action<string, double?> report, CancellationToken ct)

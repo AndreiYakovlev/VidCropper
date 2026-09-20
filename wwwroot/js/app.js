@@ -1,3 +1,4 @@
+import { setupUpscaler } from './upscaler.js';
 import { setupPlayer } from './player.js';
 import { setupCrop } from './crop.js';
 import { setupSettings } from './settings.js';
@@ -11,3 +12,5 @@ setupCrop(video);
 setupSettings();
 setupBackend();
 setupLinkDialog(openRemote);
+
+setupUpscaler(video);

@@ -241,6 +241,68 @@
               Выберите видео, чтобы прочитать метаданные.
             </p>
           </section>
+          <section class="panel result">
+            <div class="section-title">
+              <h2>Результат</h2>
+              <span class="format-badge">MP4</span>
+            </div>
+            <dl>
+              <div>
+                <dt>Длительность</dt>
+                <dd id="summary-duration">—</dd>
+              </div>
+              <div>
+                <dt>Область</dt>
+                <dd id="summary-crop">—</dd>
+              </div>
+              <div>
+                <dt>Масштаб</dt>
+                <dd id="summary-scale">100%</dd>
+              </div>
+              <div>
+                <dt>Видео</dt>
+                <dd id="summary-video">H.264 · 30 FPS</dd>
+              </div>
+              <div>
+                <dt>Качество</dt>
+                <dd id="summary-quality">Максимальное · CRF 16</dd>
+              </div>
+              <div id="summary-ai-row" hidden>
+                <dt>Upscaler</dt>
+                <dd id="summary-ai">—</dd>
+              </div>
+              <div>
+                <dt>Разрешение</dt>
+                <dd id="summary-size">—</dd>
+              </div>
+              <div>
+                <dt>Звук</dt>
+                <dd id="summary-audio">Сохранить при наличии</dd>
+              </div>
+            </dl>
+            <div class="export-actions">
+              <div class="export-action-row">
+                <button id="export" class="button primary export" disabled>
+                  Экспортировать видео
+                  <span>↗</span>
+                </button>
+                <button id="cancel" class="cancel" disabled>Отмена</button>
+              </div>
+              <progress
+                id="export-progress"
+                max="100"
+                hidden
+                aria-label="Прогресс обработки"
+              ></progress>
+
+              <p id="export-status" class="export-note" role="status">
+                Выберите видео для начала работы.
+              </p>
+              <p id="result-details" hidden></p>
+              <p id="export-timing" class="processing-timing"></p>
+              <a id="download" class="button secondary" hidden>Скачать MP4 ↓</a>
+            </div>
+          </section>
         </section>
         <aside class="panel settings">
           <div class="settings-heading">
@@ -304,6 +366,7 @@
               <span>От выбранной области</span>
               <span>100%</span>
             </div>
+            <p id="scale-ai-note" class="meta-note" hidden>Размер задаётся в секции Upscaler</p>
             <div class="output-size">
               <span>Итоговое разрешение</span>
               <strong id="output-size">
@@ -311,6 +374,62 @@
                 <small>px</small>
               </strong>
             </div>
+          </section>
+          <section class="settings-section upscaler" aria-labelledby="upscaler-title">
+            <h2 id="upscaler-title">Upscaler</h2>
+            <label class="sound-row" for="ai-enabled">
+              <span>Включить AI-увеличение</span>
+              <input id="ai-enabled" type="checkbox" />
+            </label>
+            <fieldset id="ai-fields" disabled>
+              <label for="ai-model">Модель</label>
+              <select id="ai-model" aria-describedby="ai-description">
+                <option value="nomos-weak">Nomos8k SPAN Weak</option>
+              </select>
+              <p id="ai-description" class="meta-note">
+                Относительно чистый исходник, мягкое восстановление.
+              </p>
+              <label for="ai-scale">Итоговый масштаб</label>
+              <select id="ai-scale">
+                <option value="2">×2</option>
+                <option value="3">×3</option>
+                <option value="4">×4</option>
+              </select>
+              <p id="ai-size" class="meta-note">Выберите видео</p>
+              <p id="ai-native-note" class="meta-note">
+                Модель обрабатывает в ×4, затем изображение уменьшается до выбранного размера.
+              </p>
+              <p class="meta-note">
+                AI может изменять мелкие детали. Проверьте результат на коротком отрезке.
+              </p>
+              <p id="ai-package-status" class="meta-note" role="status">Получение каталога…</p>
+              <div class="ai-actions">
+                <button id="ai-install" class="button secondary" type="button">
+                  Скачать необходимые компоненты
+                </button>
+                <button id="ai-rollback" class="text-button" type="button" hidden>
+                  Вернуться к предыдущей версии
+                </button>
+                <button id="ai-check" class="text-button" type="button" hidden>
+                  Проверить GPU / файлы
+                </button>
+                <button id="ai-preview" class="button secondary" type="button" disabled>
+                  Проба до 3 секунд
+                </button>
+              </div>
+            </fieldset>
+            <progress id="ai-progress" max="100" hidden aria-label="Установка AI-модуля"></progress>
+            <p id="ai-operation-status" class="meta-note" role="status"></p>
+            <p class="meta-note">
+              Временные PNG сохраняются в temp/ai в корне VidCropper и могут занимать десятки
+              гигабайт. После обработки кадры удаляются.
+            </p>
+            <button id="ai-retry-catalog" class="text-button" type="button" hidden>
+              Повторить загрузку каталога
+            </button>
+            <button id="ai-cancel" class="text-button" type="button" hidden>
+              Отменить установку / проверку
+            </button>
           </section>
           <section class="settings-section">
             <div class="label-row">
@@ -349,54 +468,6 @@
               <input id="audio" type="checkbox" role="switch" checked />
             </label>
           </section>
-          <section class="result">
-            <div class="section-title">
-              <h2>Результат</h2>
-              <span class="format-badge">MP4</span>
-            </div>
-            <dl>
-              <div>
-                <dt>Длительность</dt>
-                <dd id="summary-duration">—</dd>
-              </div>
-              <div>
-                <dt>Область</dt>
-                <dd id="summary-crop">—</dd>
-              </div>
-              <div>
-                <dt>Масштаб</dt>
-                <dd id="summary-scale">100%</dd>
-              </div>
-              <div>
-                <dt>Видео</dt>
-                <dd id="summary-video">H.264 · 30 FPS</dd>
-              </div>
-              <div>
-                <dt>Качество</dt>
-                <dd id="summary-quality">Максимальное · CRF 16</dd>
-              </div>
-              <div>
-                <dt>Звук</dt>
-                <dd id="summary-audio">Сохранить при наличии</dd>
-              </div>
-            </dl>
-            <button id="export" class="button primary export" disabled>
-              Экспортировать видео
-              <span>↗</span>
-            </button>
-            <progress
-              id="export-progress"
-              max="100"
-              hidden
-              aria-label="Прогресс обработки"
-            ></progress>
-            <button id="cancel" class="cancel" disabled>Отмена</button>
-            <p id="export-status" class="export-note" role="status">
-              Выберите видео для начала работы.
-            </p>
-            <p id="result-details" hidden></p>
-            <a id="download" class="button secondary" hidden>Скачать MP4 ↓</a>
-          </section>
         </aside>
       </div>
       <footer>
@@ -410,6 +481,59 @@
     </main>
     <input type="file" id="file-input" accept="video/*,.mkv,.avi,.mov,.webm,.mp4,.m4v" hidden />
     <div id="drop-indicator" hidden>Отпустите файл, чтобы открыть видео</div>
+    <dialog id="ai-preview-dialog" class="ai-preview-dialog" aria-labelledby="ai-preview-title">
+      <div class="section-title">
+        <h2 id="ai-preview-title">Проба Upscaler — до / после</h2>
+        <button id="ai-preview-close" class="text-button" type="button" aria-label="Закрыть пробу">
+          ×
+        </button>
+      </div>
+      <p id="ai-preview-status" role="status">Подготовка…</p>
+      <p id="ai-preview-timing" class="processing-timing"></p>
+      <p id="ai-preview-stale" class="meta-note" hidden>
+        Настройки изменились. Эта проба устарела — создайте новую.
+      </p>
+      <progress id="ai-preview-progress" max="100" aria-label="Прогресс пробы"></progress>
+      <div class="ai-preview-controls">
+        <button id="ai-preview-cancel" class="button secondary" type="button">Отменить</button>
+        <button id="ai-preview-retry" class="button secondary" type="button" hidden>
+          Повторить пробу
+        </button>
+        <button id="ai-preview-dismiss" class="text-button" type="button">Закрыть</button>
+      </div>
+      <div class="ai-comparison">
+        <figure>
+          <figcaption>До · без AI</figcaption>
+          <video id="ai-before" muted playsinline preload="auto"></video>
+        </figure>
+        <figure>
+          <figcaption>После · AI</figcaption>
+          <video id="ai-after" muted playsinline preload="auto"></video>
+        </figure>
+      </div>
+      <div class="ai-preview-controls">
+        <button
+          id="ai-preview-play"
+          class="button secondary icon-play"
+          type="button"
+          aria-label="Воспроизвести"
+          title="Воспроизвести"
+          disabled
+        >
+          ▶
+        </button>
+        <input
+          id="ai-preview-seek"
+          type="range"
+          min="0"
+          max="3"
+          step="0.01"
+          value="0"
+          disabled
+          aria-label="Позиция пробы"
+        />
+      </div>
+    </dialog>
     <script type="module" src="js/app.js"></script>
     <dialog
       id="link-dialog"
@@ -425,7 +549,8 @@
       </div>
       <h2 id="link-title">Открыть видео по ссылке</h2>
       <p id="link-description" class="link-demo">
-        Скачайте видео на компьютер и откройте его в редакторе.
+        Видео сохранится в папку downloads в корне VidCropper и откроется в редакторе. Скачанный
+        файл останется после закрытия приложения.
       </p>
       <form id="link-form" novalidate>
         <label for="video-url">Ссылка на видео</label>

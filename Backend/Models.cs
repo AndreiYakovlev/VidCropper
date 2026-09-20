@@ -17,13 +17,16 @@ public sealed record VideoInfo(int Width, int Height, double Duration, double Fp
 public sealed record CropRegion(int X, int Y, int Width, int Height);
 public sealed record ExportRequest(Guid MediaId, CropRegion? Crop, int Scale, int Fps,
     bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null,
-    string? Quality = null);
+    string? Quality = null, UpscaleRequest? Upscale = null);
+public sealed record AiPreviewRequest(ExportRequest Export, double Position);
 public sealed record TrimRange(double Start, double End)
 {
     public double Duration => End - Start;
 }
 public sealed record ExportSnapshot(Guid Id, string Status, double Progress, string? Error,
-    VideoInfo? Result, string FileName);
+    VideoInfo? Result, string FileName, string? Stage = null, long FramesDone = 0, long FramesTotal = 0, bool Preview = false,
+    string? StageId = null, double? StageProgress = null, bool FramesTotalEstimated = false,
+    double ElapsedSeconds = 0, double StageElapsedSeconds = 0, double? RemainingSeconds = null);
 
 public static class ExportSettings
 {
@@ -57,6 +60,13 @@ public static class ExportSettings
             throw new MediaException("Область кадрирования выходит за границы видео.");
         if (request.Scale is < 1 or > 100 || request.Fps is not (24 or 25 or 30 or 50 or 60))
             throw new MediaException("Недопустимый масштаб или FPS.");
+        if (request.Upscale is not null)
+        {
+            AiCatalog.Validate(request.Upscale);
+            if ((long)c.Width * 4 > 32768 || (long)c.Height * 4 > 32768)
+                throw new MediaException("Область слишком велика для AI: родной результат не должен превышать 32768 пикселей по стороне.");
+            return (c.Width * request.Upscale.Scale / 2 * 2, c.Height * request.Upscale.Scale / 2 * 2);
+        }
         return (Math.Max(2, (int)((long)c.Width * request.Scale / 200) * 2),
             Math.Max(2, (int)((long)c.Height * request.Scale / 200) * 2));
     }

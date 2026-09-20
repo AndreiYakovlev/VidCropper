@@ -152,7 +152,14 @@ test('real yt-dlp: compatible MP4, conversion, ranges, cancellation, errors and 
       await fetch(app.url + '/api/exports/' + exported.id, { method:'DELETE', headers });
       await fetch(app.url + '/api/media/' + result.id, { method:'DELETE', headers });
       assert.equal((await fetch(app.url + `/api/media/${result.id}/preview`)).status, 404);
+      const saved = await readFile(join(folder, 'downloads', result.name));
+      assert.ok(saved.length > 0, 'releasing a session source must preserve the downloaded file');
+      const again = await json(app.url, '/api/link-downloads/' + crypto.randomUUID(), { url: remote + '/' + file });
+      assert.notEqual(again.name, result.name, 'duplicate downloads must have different names');
+      assert.deepEqual(await readFile(join(folder, 'downloads', result.name)), saved, 'existing download must not be overwritten');
+      await fetch(app.url + '/api/media/' + again.id, { method:'DELETE', headers });
     }
+    const savedNames = (await readdir(join(folder, 'downloads'))).sort();
     const operation = crypto.randomUUID(), abort = new AbortController();
     const pending = fetch(app.url + '/api/link-downloads/' + operation, { method:'POST', headers, body:JSON.stringify({url: remote + '/slow.mp4'}), signal:abort.signal }).catch(error => error);
     let progress;
@@ -167,7 +174,9 @@ test('real yt-dlp: compatible MP4, conversion, ranges, cancellation, errors and 
     const failed = await fetch(app.url + '/api/link-downloads/' + crypto.randomUUID(), { method:'POST', headers, body:JSON.stringify({url:remote+'/missing.mp4'}) });
     assert.equal(failed.status,422);
     assert.doesNotMatch((await failed.json()).error,/возраста/,'unrelated failures must not be labelled age restrictions');
+    assert.deepEqual((await readdir(join(folder, 'downloads'))).sort(), savedNames, 'cancelled and failed downloads leave no permanent or partial files');
   } finally { await app.stop(); http.closeAllConnections(); await new Promise(resolve => http.close(resolve)); }
+  assert.ok((await readdir(join(folder, 'downloads'))).length > 0, 'downloads survive server shutdown');
   const limited = await launch(folder, ['--Media:MaxUploadBytes', '1000']);
   const fileServer = createServer((req,res) => { res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':mp4.length}); res.end(mp4); });
   await new Promise(resolve => fileServer.listen(0,'127.0.0.1',resolve));

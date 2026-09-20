@@ -37,7 +37,15 @@ builder.WebHost.UseKestrel(options =>
 builder.Services.AddSingleton(mediaOptions);
 builder.Services.AddSingleton<MediaTools>();
 builder.Services.AddSingleton<MediaStore>();
+builder.Services.AddSingleton<ProcessingGate>();
+builder.Services.AddSingleton(new AiCatalog());
+builder.Services.AddSingleton<AiRunner>();
+builder.Services.AddSingleton<AiPackages>();
+builder.Services.AddSingleton<AiPipeline>();
+builder.Services.AddSingleton<FrameWorkspace>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<AiPackages>());
 builder.Services.AddSingleton<ExportService>();
+builder.Services.AddSingleton<ExportArchive>();
 builder.Services.AddSingleton<DownloadTools>();
 builder.Services.AddSingleton<LinkDownloadService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LinkDownloadService>());
@@ -65,7 +73,11 @@ app.Use(async (context, next) =>
     }
 });
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // The local URL stays the same across upgrades; revalidate HTML and all module imports.
+    OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache"
+});
 app.MapMediaApi(mediaOptions);
 app.Lifetime.ApplicationStarted.Register(() =>
 {

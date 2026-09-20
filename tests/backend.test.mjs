@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -53,6 +53,11 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
   const before = new Set(await readdir(tempRoot).catch(() => []));
   const server = await launch();
   const { url } = server;
+  for (const path of ['/', '/js/app.js', '/js/upscaler.js', '/styles.css']) {
+    const response = await fetch(url + path);
+    assert.equal(response.headers.get('cache-control'), 'no-cache', `${path} must revalidate after upgrades`);
+    await response.arrayBuffer();
+  }
   async function upload(name) {
     const id = crypto.randomUUID();
     const response = await fetch(`${url}/api/media/${id}?name=${encodeURIComponent('тест " видео ' + name)}`, {
@@ -60,6 +65,7 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
     assert.equal(response.status, 200, await response.clone().text());
     return response.json();
   }
+  const archived = new Map();
   async function finish(job) {
     const response = await fetch(`${url}/api/exports/${job.id}/events`);
     assert.equal(response.headers.get('content-type'), 'text/event-stream');
@@ -67,6 +73,9 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
     const end = snapshots.at(-1);
     assert.equal(end.status, 'completed', JSON.stringify(end));
     assert.equal(end.progress, 100);
+    const savedPath = join(root,'output',end.fileName);
+    assert.ok(!archived.has(savedPath), 'exports never overwrite an earlier result');
+    archived.set(savedPath, await readFile(savedPath));
     for (let i = 1; i < snapshots.length; i++) assert.ok(snapshots[i].progress >= snapshots[i-1].progress);
     return end;
   }
@@ -232,6 +241,10 @@ test('real FFmpeg pipeline, cancellation, cleanup and configurable ports', { tim
   } finally {
     await json(url,'/api/shutdown','POST').catch(()=>server.process.kill());
     await server.exited;
+    for (const [path, data] of archived) {
+      assert.deepEqual(await readFile(path), data, 'exports survive job deletion and server shutdown');
+      await rm(path);
+    }
   }
   const after = await readdir(tempRoot).catch(()=>[]);
   assert.deepEqual(after.filter(x=>!before.has(x)),[], 'session temp directories must be removed on shutdown');
