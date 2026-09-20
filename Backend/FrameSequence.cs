@@ -1,6 +1,6 @@
 namespace VidCropper.Backend;
 
-public sealed record FrameSequence(string Directory, string Pattern, int StartNumber, long Count, int Width, int Height, int Fps)
+public sealed record FrameSequence(string Directory, string Pattern, int StartNumber, long Count, int Width, int Height, FrameRate Fps)
 {
     public string Name(long index) => (StartNumber + index).ToString("D8", System.Globalization.CultureInfo.InvariantCulture) + ".png";
     public string FilePath(long index) => Path.Combine(Directory, Name(index));

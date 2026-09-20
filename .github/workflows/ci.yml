@@ -59,7 +59,7 @@ jobs:
         run: dotnet build -c Release -o artifacts/backend-build
 
       - name: Test geometry, trimming and real FFmpeg exports
-        run: node --test --test-concurrency=1 tests/geometry.test.mjs tests/trim.test.mjs tests/backend.test.mjs tests/ai.test.mjs tests/processing-time.test.mjs
+        run: node --test --test-concurrency=1 tests/geometry.test.mjs tests/trim.test.mjs tests/backend.test.mjs tests/ai.test.mjs tests/interpolation.test.mjs tests/processing-time.test.mjs
 
       - name: Test AI package lifecycle and bounded pipeline without GPU
         run: dotnet run --project tests/AiChecks/AiChecks.csproj -c Release

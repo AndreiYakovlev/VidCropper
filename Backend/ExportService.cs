@@ -45,13 +45,14 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
                 lease = store.Acquire(request.MediaId);
                 if (previewPosition is not null)
                 {
-                    if (request.Upscale is null || !double.IsFinite(previewPosition.Value)) throw new MediaException("Для пробы выберите AI-модель и позицию видео.");
+                    if ((request.Upscale is null && request.Interpolation is null) || !double.IsFinite(previewPosition.Value)) throw new MediaException("Для пробы выберите AI-модель и позицию видео.");
                     var range = ExportSettings.ValidateTrim(request, lease.Source.Info);
                     var start = Math.Clamp(previewPosition.Value, range.Start, range.End);
                     if (range.End - start < Math.Min(0.01, range.Duration)) start = Math.Max(range.Start, range.End - 3);
                     request = request with { StartSeconds = start, EndSeconds = Math.Min(range.End, start + 3), Audio = false };
                 }
                 var installation = request.Upscale is null ? null : packages.Resolve(request.Upscale);
+                var interpolationInstallation = request.Interpolation is null ? null : packages.ResolveInterpolation(request.Interpolation);
                 var size = ExportSettings.Validate(request, lease.Source.Info);
                 var trim = ExportSettings.ValidateTrim(request, lease.Source.Info);
                 var crf = ExportSettings.ResolveCrf(request.Quality);
@@ -61,14 +62,14 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
                 if (previewPosition is not null) job.BeforePath = Path.Combine(store.Root, $"{id:N}.before.mp4");
                 jobs.Add(id, job);
                 active = true;
-                job.Task = Task.Run(() => RunAsync(job, request, size, trim, crf, lease, installation, owner));
+                job.Task = Task.Run(() => RunAsync(job, request, size, trim, crf, lease, installation, interpolationInstallation, owner));
                 return Snapshot(job);
             }
             catch { lease?.Dispose(); owner.Dispose(); throw; }
         }
     }
 
-    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, TrimRange trim, int crf, MediaStore.Lease lease, AiInstallation? installation, IDisposable owner)
+    private async Task RunAsync(Job job, ExportRequest request, (int Width, int Height) size, TrimRange trim, int crf, MediaStore.Lease lease, AiInstallation? installation, AiInstallation? interpolationInstallation, IDisposable owner)
     {
         using (owner)
         using (lease)
@@ -77,8 +78,14 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
             try
             {
                 lock (gate) job.Status = "running";
-                if (installation is not null)
+                if (installation is not null || interpolationInstallation is not null)
                 {
+                    var stages = new List<string> { "extract" };
+                    if (interpolationInstallation is not null) stages.Add("scenes");
+                    if (installation is not null) stages.Add("upscale");
+                    if (interpolationInstallation is not null) stages.AddRange(["resize", "interpolate"]);
+                    stages.Add("encode");
+                    if (job.BeforePath is not null) stages.Add("compare");
                     await ai.RunAsync(request, lease.Source, trim, size, crf, installation, job.Path, progress =>
                     {
                         lock (gate)
@@ -87,15 +94,9 @@ public sealed class ExportService(MediaStore store, MediaTools tools, ILogger<Ex
                             job.Timer.Report(progress.Id, progress.Done, progress.Total);
                             job.StageProgress = progress.Percent; job.FramesTotalEstimated = progress.Estimated;
                             job.FramesDone = progress.Done; job.FramesTotal = progress.Total;
-                            var (start, weight) = progress.Id switch
-                            {
-                                "extract" => (0d, 15d), "upscale" => (15d, 65d),
-                                "encode" => (80d, job.BeforePath is null ? 19d : 10d),
-                                "compare" => (90d, 9d), _ => (0d, 0d)
-                            };
-                            job.Progress = Math.Max(job.Progress, start + weight * progress.Percent / 100);
+                            job.Progress = Math.Max(job.Progress, (stages.IndexOf(progress.Id) + progress.Percent / 100) * 99 / stages.Count);
                         }
-                    }, linked.Token, job.BeforePath);
+                    }, linked.Token, job.BeforePath, interpolationInstallation);
                 }
                 else
                 {

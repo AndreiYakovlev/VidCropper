@@ -116,13 +116,13 @@ public sealed class MediaTools(MediaOptions options, ILogger<MediaTools> logger)
         if (Math.Abs(angle - 90) < 1 || Math.Abs(angle - 270) < 1) (width, height) = (height, width);
         var duration = GetNumber(video, "duration");
         if (duration <= 0) duration = GetNumber(format, "duration");
-        var fps = Fraction(GetString(video, "avg_frame_rate"), '/');
-        if (fps <= 0) fps = Fraction(GetString(video, "r_frame_rate"), '/');
+        var rate = FrameRate.Parse(GetString(video, "avg_frame_rate")) ?? FrameRate.Parse(GetString(video, "r_frame_rate"));
+        var fps = rate?.Value ?? 0;
         if (width < 1 || height < 1 || width > 32768 || height > 32768 || !double.IsFinite(duration) || duration <= 0)
             throw new MediaException("Недопустимые размеры или длительность видео.");
         return new VideoInfo(width, height, duration, fps, GetString(video, "codec_name"),
             (long)GetNumber(format, "bit_rate"), streams.Any(s => GetString(s, "codec_type") == "audio"),
-            (int)GetNumber(video, "index"), new FileInfo(path).Length);
+            (int)GetNumber(video, "index"), new FileInfo(path).Length, rate?.ToString());
     }
 
     private static string GetString(JsonElement element, string name) =>

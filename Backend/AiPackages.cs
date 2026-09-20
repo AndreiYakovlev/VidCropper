@@ -17,7 +17,7 @@ public sealed record AiPackageStatus(string Family, string Version, string? Acti
     bool Installed, bool UpdateAvailable, bool CanRollback, long DownloadBytes, string License, string SourceUrl);
 
 public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environment, ProcessingGate gate,
-    AiRunner runner, IHostApplicationLifetime lifetime, ILogger<AiPackages> logger) : IHostedService
+    AiRunner runner, IHostApplicationLifetime lifetime, ILogger<AiPackages> logger, RifeRunner? rifeRunner = null) : IHostedService
 {
     private readonly object sync = new();
     private readonly Dictionary<Guid, Operation> operations = [];
@@ -64,6 +64,7 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
     public object Status() => new
     {
         models = AiCatalog.Models,
+        interpolationModels = RifeCatalog.Models,
         busy = gate.Busy,
         supported = OperatingSystem.IsWindows() && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.X64,
         packages = catalog.Packages.Select(p => p.Family).Distinct().Select(family =>
@@ -80,10 +81,16 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
 
     public AiInstallation Resolve(UpscaleRequest request)
     {
-        var model = AiCatalog.Validate(request);
+        return ResolveModel(AiCatalog.Validate(request));
+    }
+
+    public AiInstallation ResolveInterpolation(InterpolationRequest request) => ResolveModel(RifeCatalog.Validate(request));
+
+    private AiInstallation ResolveModel(AiModel model)
+    {
         var state = ReadState(model.Family);
         var package = Known(model.Family, state.Active);
-        if (!Present(package)) throw new MediaException("Установите или восстановите AI-модуль в секции Upscaler.", 409);
+        if (!Present(package)) throw new MediaException("Установите или восстановите компоненты выбранной AI-модели.", 409);
         var versionModel = package!.Models.SingleOrDefault(m => m.Id == model.Id)
             ?? throw new MediaException("Активная версия пакета не поддерживает эту модель. Обновите AI-модуль.", 409);
         return new(package, Folder(package), versionModel);
@@ -103,7 +110,7 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
 
     public AiOperation Start(string modelId, string action)
     {
-        var model = AiCatalog.Model(modelId);
+        var model = AiCatalog.AnyModel(modelId);
         if (action is not ("install" or "rollback" or "check")) throw new MediaException("Неизвестная операция AI.");
         if (!OperatingSystem.IsWindows() || System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64)
             throw new MediaException("AI-модуль поддерживает Windows x64.", 503);
@@ -145,10 +152,10 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         var state = ReadState(model.Family);
         if (action == "check")
         {
-            var installed = Resolve(new(model.Id, 2));
+            var installed = ResolveModel(model);
             await VerifyAsync(installed, ct);
             report("Проверка модели на GPU…", null);
-            await runner.CheckAsync(installed, ct);
+            await CheckModelAsync(installed, ct);
             return;
         }
         var target = action == "rollback"
@@ -161,8 +168,11 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             try
             {
                 await VerifyAsync(installed, ct);
-                report("Проверка модели на GPU…", null);
-                await runner.CheckAsync(installed, ct);
+                if (target.CheckOnInstall)
+                {
+                    report("Проверка модели на GPU…", null);
+                    await CheckModelAsync(installed, ct);
+                }
                 ct.ThrowIfCancellationRequested();
                 if (state.Active != target.Version) WriteState(model.Family, new(target.Version, state.Active));
                 return;
@@ -203,8 +213,11 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             if (target.Family == "realesrgan")
                 foreach (var name in new[] { "Real-ESRGAN.txt", "Real-ESRGAN-ncnn-vulkan.txt" })
                     File.Copy(Path.Combine(environment.ContentRootPath, "licenses", "ai", name), Path.Combine(staged, name));
-            report("Проверка модели на GPU…", null);
-            await runner.CheckAsync(new(target, staged, targetModel), ct);
+            if (target.CheckOnInstall)
+            {
+                report("Проверка модели на GPU…", null);
+                await CheckModelAsync(new(target, staged, targetModel), ct);
+            }
             ct.ThrowIfCancellationRequested();
             var destination = Folder(target);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -228,6 +241,7 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
 
     private static HashSet<string> Required(AiPackage p)
     {
+        if (p.RequiredFiles is not null) return new(p.RequiredFiles, StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.Ordinal) { p.Executable, "vcomp140.dll" };
         if (p.Family == "span") names.Add("LICENSE");
         foreach (var model in p.Models)
@@ -254,7 +268,8 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             _ = SafePath(destination, entry.FullName);
             if (!entry.FullName.StartsWith(p.ArchiveRoot, StringComparison.Ordinal)) continue;
             var relative = entry.FullName[p.ArchiveRoot.Length..];
-            if (!required.Contains(relative)) continue;
+            if (relative.Length == 0 || entry.FullName.EndsWith('/')) continue;
+            if (!p.ExtractAll && !required.Contains(relative)) continue;
             if (entry.Length > 128L * 1024 * 1024 || extracted.Any(f => f.Path == relative)) throw new MediaException("Некорректный архив AI.");
             var path = SafePath(destination, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -263,10 +278,14 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             await using var stream = File.OpenRead(path);
             extracted.Add(new(relative, stream.Length, Convert.ToHexString(await SHA256.HashDataAsync(stream, ct))));
         }
-        if (!required.SetEquals(extracted.Select(f => f.Path))) throw new MediaException("В AI-пакете отсутствуют необходимые файлы.");
-        await File.WriteAllTextAsync(Path.Combine(destination, "SOURCES.txt"), $"{p.SourceUrl}\n{p.License}\nNomos8k author: Helaman / Philip Hofmann\nhttps://openmodeldb.info/models/4x-Nomos8k-span-otf-medium\n", ct);
+        if (!required.IsSubsetOf(extracted.Select(f => f.Path))) throw new MediaException("В AI-пакете отсутствуют необходимые файлы.");
+        await File.WriteAllTextAsync(Path.Combine(destination, "SOURCES.txt"), $"{p.SourceUrl}\n{p.License}\n" +
+            (p.Family == "span" ? "Nomos8k author: Helaman / Philip Hofmann\nhttps://openmodeldb.info/models/4x-Nomos8k-span-otf-medium\n" : ""), ct);
         await File.WriteAllTextAsync(Path.Combine(destination, "receipt.json"), JsonSerializer.Serialize(new AiReceipt(p.Sha256, extracted.ToArray())), ct);
     }
+    private Task CheckModelAsync(AiInstallation installation, CancellationToken ct) => installation.Package.Family == "rife"
+        ? (rifeRunner ?? throw new InvalidOperationException("RIFE runner is not registered.")).CheckAsync(installation, ct)
+        : runner.CheckAsync(installation, ct);
     private void TryClean(string path)
     {
         try { if (Directory.Exists(path)) Directory.Delete(path, true); }

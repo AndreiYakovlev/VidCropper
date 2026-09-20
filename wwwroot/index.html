@@ -431,6 +431,34 @@
               Отменить установку / проверку
             </button>
           </section>
+          <section class="settings-section upscaler" aria-labelledby="rife-title">
+            <h2 id="rife-title">Интерполяция кадров</h2>
+            <label class="sound-row" for="rife-enabled">
+              <span>Включить интерполяцию</span><input id="rife-enabled" type="checkbox" />
+            </label>
+            <fieldset id="rife-fields" disabled>
+              <label for="rife-model">Модель</label>
+              <select id="rife-model" aria-describedby="rife-description"><option value="rife-v4.26">RIFE 4.26</option></select>
+              <p id="rife-description" class="meta-note"></p>
+              <label for="rife-multiplier">Множитель кадров</label>
+              <select id="rife-multiplier"><option value="2">×2</option><option value="3">×3</option></select>
+              <p id="rife-fps" class="meta-note" role="status">Выберите видео</p>
+              <p class="meta-note">Длительность и скорость звука сохраняются. Видео с переменным FPS приводится по временным меткам к постоянной средней частоте исходника перед интерполяцией.</p>
+              <p class="meta-note">На быстрых движениях возможны артефакты. Проба применяет все включённые AI-эффекты.</p>
+              <p id="rife-package-status" class="meta-note" role="status">Получение каталога…</p>
+              <div class="ai-actions">
+                <button id="rife-install" class="button secondary" type="button">Скачать полный пакет</button>
+                <button id="rife-rollback" class="text-button" type="button" hidden>Вернуться к предыдущей версии</button>
+                <button id="rife-check" class="text-button" type="button" hidden>Проверить GPU / файлы</button>
+                <button id="rife-preview" class="button secondary" type="button" disabled>Проба до 3 секунд</button>
+              </div>
+            </fieldset>
+            <progress id="rife-progress" max="100" hidden aria-label="Установка RIFE"></progress>
+            <p id="rife-operation-status" class="meta-note" role="status"></p>
+            <p class="meta-note">Полный пакет TNTwise содержит все модели, включая старые; в выборе доступны совместимые с 2× и 3×. Установка проверяет файлы без запуска GPU. Временные PNG в temp/ai могут занимать десятки гигабайт и удаляются после обработки.</p>
+            <button id="rife-retry-catalog" class="text-button" type="button" hidden>Повторить загрузку каталога</button>
+            <button id="rife-cancel" class="text-button" type="button" hidden>Отменить установку / проверку</button>
+          </section>
           <section class="settings-section">
             <div class="label-row">
               <label for="fps">Частота кадров</label>
@@ -483,7 +511,7 @@
     <div id="drop-indicator" hidden>Отпустите файл, чтобы открыть видео</div>
     <dialog id="ai-preview-dialog" class="ai-preview-dialog" aria-labelledby="ai-preview-title">
       <div class="section-title">
-        <h2 id="ai-preview-title">Проба Upscaler — до / после</h2>
+        <h2 id="ai-preview-title">Проба AI — до / после</h2>
         <button id="ai-preview-close" class="text-button" type="button" aria-label="Закрыть пробу">
           ×
         </button>

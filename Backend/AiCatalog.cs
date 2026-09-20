@@ -4,7 +4,8 @@ public sealed record UpscaleRequest(string ModelId, int Scale);
 public sealed record AiModel(string Id, string Name, string Description, string Family, string FileName, int NativeScale,
     bool VariableScale = false);
 public sealed record AiPackage(string Family, string Version, string Url, long Bytes, string Sha256,
-    string ArchiveRoot, string Executable, string ModelsDirectory, string SourceUrl, string License, AiModel[] Models);
+    string ArchiveRoot, string Executable, string ModelsDirectory, string SourceUrl, string License, AiModel[] Models,
+    string[]? RequiredFiles = null, bool ExtractAll = false, bool CheckOnInstall = true);
 
 public sealed class AiCatalog
 {
@@ -27,7 +28,8 @@ public sealed class AiCatalog
         new("realesrgan", "20220424", "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
             45474481, "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
             "", "realesrgan-ncnn-vulkan.exe", "models", "https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0",
-            "BSD-3-Clause (Real-ESRGAN); MIT (NCNN executable)", Models.Where(m => m.Family == "realesrgan").ToArray())]) { }
+            "BSD-3-Clause (Real-ESRGAN); MIT (NCNN executable)", Models.Where(m => m.Family == "realesrgan").ToArray()),
+        RifeCatalog.Package]) { }
 
     public AiCatalog(IReadOnlyList<AiPackage> packages) => Packages = packages;
     public AiPackage Latest(string family) => Packages.LastOrDefault(p => p.Family == family)
@@ -36,6 +38,8 @@ public sealed class AiCatalog
         ?? throw new MediaException("Эта версия AI не поддерживается каталогом приложения.");
     public static AiModel Model(string id) => Models.FirstOrDefault(m => m.Id == id)
         ?? throw new MediaException("Неизвестная модель Upscaler.");
+    public static AiModel AnyModel(string id) => Models.Concat(RifeCatalog.Models).FirstOrDefault(m => m.Id == id)
+        ?? throw new MediaException("Неизвестная модель AI.");
     public static AiModel Validate(UpscaleRequest request)
     {
         var model = Model(request.ModelId);

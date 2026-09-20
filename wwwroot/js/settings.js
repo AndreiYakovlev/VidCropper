@@ -1,3 +1,4 @@
+import { outputFps, fpsLabel } from './interpolation.mjs';
 import { upscaleSize } from './upscale.mjs';
 import { state, update, subscribe } from './state.js';
 import { clamp, fitCrop, editCrop, outputSize, pixelCrop } from './geometry.mjs';
@@ -52,6 +53,8 @@ export function setupSettings() {
     $('crop-settings').disabled = !state.ready || busy;
     for (const id of ['scale', 'scale-number', 'fps', 'quality', 'audio', 'open-top', 'open-empty']) $(id).disabled = busy;
     for (const id of ['scale', 'scale-number']) $(id).disabled = busy || state.aiEnabled;
+    $('fps').disabled = busy || state.rifeEnabled;
+    $('fps-note').textContent = state.rifeEnabled ? 'FPS рассчитывается от исходника; длительность сохраняется.' : 'FPS выше исходного повторяет кадры и не добавляет плавности.';
     $('scale-ai-note').hidden = !state.aiEnabled;
     for (const id of ['play', 'seek', 'mute', 'source-view', 'crop-view']) $(id).disabled = !state.ready;
     for (const mode of ['source', 'crop']) {
@@ -82,7 +85,7 @@ export function setupSettings() {
     text('summary-size', output ? `${output.width} × ${output.height}` : '—');
     $('summary-ai-row').hidden = !state.aiEnabled;
     text('summary-ai', state.aiModels.find(model => model.id === state.aiModel)?.name ?? state.aiModel);
-    text('summary-video', `H.264 · ${state.fps} FPS`);
+    text('summary-video', `H.264 · ${fpsLabel(outputFps(state))} FPS${state.rifeEnabled ? ` · RIFE ×${state.rifeMultiplier}` : ''}`);
     $('quality').value = state.quality;
     text('summary-quality', $('quality').selectedOptions[0].textContent);
     text('summary-audio', state.audio ? 'Сохранить при наличии' : 'Без звука');

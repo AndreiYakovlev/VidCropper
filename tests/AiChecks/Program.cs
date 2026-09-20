@@ -209,7 +209,8 @@ try
     bool truncated=false;
     try { await PngFrames.CopyFrameAsync(new MemoryStream(data[..^2]),Stream.Null,default); } catch(EndOfStreamException) { truncated=true; }
     Check(truncated,"truncated PNG rejected");
-    Console.WriteLine($"PASS: {assertions} assertions. AI runner is a test double, not a GPU quality check.");
+    await InterpolationChecks.RunAsync(tools, env, lifetime, downloads, url, Check);
+    Console.WriteLine($"PASS: {assertions} assertions. AI runners are test doubles, not a GPU quality check.");
 }
 finally
 {

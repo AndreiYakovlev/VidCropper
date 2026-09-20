@@ -8,8 +8,9 @@ public static class ExportFilters
     public static string Crop(ExportRequest request, VideoInfo source)
     {
         var c = request.Crop!;
-        return FormattableString.Invariant($"fps={request.Fps}:start_time=0:eof_action=pass,scale={source.Width}:{source.Height}:flags=lanczos,setsar=1,crop={c.Width}:{c.Height}:{c.X}:{c.Y}:exact=1");
+        return FormattableString.Invariant($"fps={InputRate(request, source)}:start_time=0:eof_action=pass,scale={source.Width}:{source.Height}:flags=lanczos,setsar=1,crop={c.Width}:{c.Height}:{c.X}:{c.Y}:exact=1");
     }
+    public static FrameRate InputRate(ExportRequest request, VideoInfo source) => request.Interpolation is null ? new(request.Fps) : FrameRate.Source(source);
     public static string Resize(int width, int height) => $"scale={width}:{height}:flags=lanczos,setsar=1";
 }
 
@@ -56,15 +57,16 @@ public class AiRunner(MediaTools tools)
     }
 }
 
-public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages packages, FrameWorkspace workspace, ILogger<AiPipeline> logger)
+public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages packages, FrameWorkspace workspace, ILogger<AiPipeline> logger, RifeRunner? rifeRunner = null)
 {
     public async Task RunAsync(ExportRequest request, MediaStore.Source source, TrimRange trim, (int Width, int Height) size,
-        int crf, AiInstallation installation, string result, Action<FrameProgress> report, CancellationToken ct, string? beforePath = null)
+        int crf, AiInstallation? installation, string result, Action<FrameProgress> report, CancellationToken ct, string? beforePath = null, AiInstallation? interpolationInstallation = null)
     {
-        await packages.VerifyAsync(installation, ct);
+        if (installation is not null) await packages.VerifyAsync(installation, ct);
+        if (interpolationInstallation is not null) await packages.VerifyAsync(interpolationInstallation, ct);
         var scratch = Path.Combine(workspace.Root, Path.GetFileNameWithoutExtension(result));
         var crop = request.Crop!;
-        var input = new FrameSequence(Path.Combine(scratch, "input"), "%08d.png", 1, 0, crop.Width, crop.Height, request.Fps);
+        var input = new FrameSequence(Path.Combine(scratch, "input"), "%08d.png", 1, 0, crop.Width, crop.Height, ExportFilters.InputRate(request, source.Info));
         using var stopped = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Exception? spaceError = null;
         workspace.CheckSpace(scratch, result);
@@ -87,25 +89,45 @@ public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages pac
         {
             var token = stopped.Token;
             input = await ExtractAsync(request, source, trim, input, report, token);
-            var scale = installation.Model.VariableScale ? request.Upscale!.Scale : installation.Model.NativeScale;
-            var output = input with { Directory = Path.Combine(scratch, "upscaled"), Width = input.Width * scale, Height = input.Height * scale };
-            Directory.CreateDirectory(output.Directory);
-            report(new("upscale", "AI-увеличение", 0, input.Count));
-            var completed = new HashSet<string>(StringComparer.Ordinal);
-            await runner.RunAsync(installation, input.Directory, output.Directory, scale, token, name =>
+            var cuts = request.Interpolation is null ? [] : await new SceneCuts(tools).DetectAsync(input, report, token);
+            var output = input;
+            if (installation is not null)
             {
-                lock (completed)
+                var scale = installation.Model.VariableScale ? request.Upscale!.Scale : installation.Model.NativeScale;
+                output = input with { Directory = Path.Combine(scratch, "upscaled"), Width = input.Width * scale, Height = input.Height * scale };
+                Directory.CreateDirectory(output.Directory);
+                report(new("upscale", "AI-увеличение", 0, input.Count));
+                await runner.RunAsync(installation, input.Directory, output.Directory, scale, token,
+                    Completion(output, "upscale", "AI-увеличение", report));
+                await output.ValidateAsync(token);
+                report(new("upscale", "AI-увеличение", input.Count, input.Count));
+                if (beforePath is null) Directory.Delete(input.Directory, true);
+            }
+            if (request.Interpolation is { } interpolation)
+            {
+                if (interpolationInstallation is null || rifeRunner is null) throw new InvalidOperationException("Missing RIFE installation or runner.");
+                if (output.Width != size.Width || output.Height != size.Height)
                 {
-                    if (name.EndsWith(".png", StringComparison.Ordinal) && long.TryParse(Path.GetFileNameWithoutExtension(name), out var n)
-                        && n >= input.StartNumber && n < input.StartNumber + input.Count && name == input.Name(n - input.StartNumber) && completed.Add(name))
-                        report(new("upscale", "AI-увеличение", completed.Count, input.Count));
+                    var resized = output with { Directory = Path.Combine(scratch, "resized"), Width = size.Width, Height = size.Height };
+                    await ResizeAsync(output, resized, report, token);
+                    if (output.Directory != input.Directory || beforePath is null) Directory.Delete(output.Directory, true);
+                    output = resized;
                 }
-            });
-            await output.ValidateAsync(token);
-            report(new("upscale", "AI-увеличение", input.Count, input.Count));
-            if (beforePath is null) Directory.Delete(input.Directory, true);
+                var interpolated = output with { Directory = Path.Combine(scratch, "interpolated"),
+                    Count = checked(output.Count * interpolation.Multiplier), Fps = output.Fps.Multiply(interpolation.Multiplier) };
+                Directory.CreateDirectory(interpolated.Directory);
+                report(new("interpolate", "Интерполяция кадров", 0, interpolated.Count));
+                await rifeRunner.RunAsync(interpolationInstallation, output, interpolated, token,
+                    Completion(interpolated, "interpolate", "Интерполяция кадров", report));
+                await interpolated.ValidateAsync(token);
+                SceneCuts.Restore(output, interpolated, interpolation.Multiplier, cuts, token);
+                report(new("interpolate", "Интерполяция кадров", interpolated.Count, interpolated.Count));
+                if (output.Directory != input.Directory || beforePath is null) Directory.Delete(output.Directory, true);
+                output = interpolated;
+            }
+            if (beforePath is null && output.Directory != input.Directory && Directory.Exists(input.Directory)) Directory.Delete(input.Directory, true);
             await EncodeAsync(output, request, source, trim, size, crf, result, "encode", "Сборка видео", report, token);
-            Directory.Delete(output.Directory, true);
+            if (output.Directory != input.Directory) Directory.Delete(output.Directory, true);
             if (beforePath is not null)
                 await EncodeAsync(input, request with { Audio = false }, source, trim,
                     (Math.Max(2, crop.Width / 2 * 2), Math.Max(2, crop.Height / 2 * 2)), crf, beforePath, "compare", "Подготовка сравнения", report, token);
@@ -133,10 +155,40 @@ public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages pac
         }
     }
 
+    private static Action<string> Completion(FrameSequence output, string stage, string label, Action<FrameProgress> report)
+    {
+        var completed = new HashSet<string>(StringComparer.Ordinal);
+        return name =>
+        {
+            lock (completed)
+            {
+                if (long.TryParse(Path.GetFileNameWithoutExtension(name), out var n) && n >= output.StartNumber &&
+                    n < output.StartNumber + output.Count && name == output.Name(n - output.StartNumber) && completed.Add(name))
+                    report(new(stage, label, completed.Count, output.Count));
+            }
+        };
+    }
+
+    private async Task ResizeAsync(FrameSequence input, FrameSequence output, Action<FrameProgress> report, CancellationToken ct)
+    {
+        Directory.CreateDirectory(output.Directory);
+        report(new("resize", "Подготовка разрешения", 0, input.Count));
+        await tools.RunAsync(false, ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-framerate", input.Fps.ToString(),
+            "-start_number", input.StartNumber.ToString(CultureInfo.InvariantCulture), "-i", Path.Combine(input.Directory, input.Pattern),
+            "-vf", ExportFilters.Resize(output.Width, output.Height), "-pix_fmt", "rgb24", "-threads", "1",
+            "-progress", "pipe:1", "-nostats", Path.Combine(output.Directory, output.Pattern)], line =>
+        {
+            if (line.StartsWith("frame=", StringComparison.Ordinal) && long.TryParse(line.AsSpan(6).Trim(), out var frame))
+                report(new("resize", "Подготовка разрешения", Math.Min(frame, input.Count), input.Count));
+        }, ct);
+        await output.ValidateAsync(ct);
+        report(new("resize", "Подготовка разрешения", input.Count, input.Count));
+    }
+
     private async Task<FrameSequence> ExtractAsync(ExportRequest request, MediaStore.Source source, TrimRange trim,
         FrameSequence sequence, Action<FrameProgress> report, CancellationToken ct)
     {
-        var expected = Math.Max(1L, (long)Math.Ceiling(trim.Duration * request.Fps));
+        var expected = Math.Max(1L, (long)Math.Ceiling(trim.Duration * sequence.Fps.Value));
         report(new("extract", "Извлечение кадров", 0, expected, true));
         await using var decoder = new MediaProcess(tools.FfmpegExecutable,
             ["-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-noaccurate_seek",
@@ -164,13 +216,13 @@ public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages pac
         (int Width, int Height) size, int crf, string result, string stage, string label, Action<FrameProgress> report, CancellationToken ct)
     {
         report(new(stage, label, 0, sequence.Count));
-        List<string> args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-framerate", ExportFilters.Number(sequence.Fps),
+        List<string> args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-framerate", sequence.Fps.ToString(),
             "-start_number", sequence.StartNumber.ToString(CultureInfo.InvariantCulture), "-i", Path.Combine(sequence.Directory, sequence.Pattern)];
         if (request.Audio && source.Info.HasAudio)
             args.AddRange(["-protocol_whitelist", "file,pipe", "-noaccurate_seek", "-ss", ExportFilters.Number(trim.Start), "-i", source.Path,
                 "-map", "1:a:0?", "-af", "atrim=start=0", "-c:a", "aac", "-b:a", "192k"]);
         else args.Add("-an");
-        args.AddRange(["-map", "0:v:0", "-t", ExportFilters.Number(trim.Duration), "-vf", ExportFilters.Resize(size.Width, size.Height),
+        args.AddRange(["-map", "0:v:0", "-t", ExportFilters.Number(trim.Duration), "-vf", ExportFilters.Resize(size.Width, size.Height) + ",tpad=stop_mode=clone:stop_duration=" + ExportFilters.Number(trim.Duration),
             "-c:v", "libx264", "-crf", crf.ToString(CultureInfo.InvariantCulture), "-preset", "medium", "-pix_fmt", "yuv420p",
             "-map_metadata", "-1", "-metadata:s:v:0", "rotate=0", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", result]);
         await tools.RunAsync(false, args, line =>

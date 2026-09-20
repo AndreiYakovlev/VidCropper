@@ -13,11 +13,11 @@ public sealed class MediaException(string message, int status = 400) : Exception
 }
 
 public sealed record VideoInfo(int Width, int Height, double Duration, double Fps,
-    string Codec, long BitRate, bool HasAudio, int StreamIndex, long Size);
+    string Codec, long BitRate, bool HasAudio, int StreamIndex, long Size, string? FrameRate = null);
 public sealed record CropRegion(int X, int Y, int Width, int Height);
 public sealed record ExportRequest(Guid MediaId, CropRegion? Crop, int Scale, int Fps,
     bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null,
-    string? Quality = null, UpscaleRequest? Upscale = null);
+    string? Quality = null, UpscaleRequest? Upscale = null, InterpolationRequest? Interpolation = null);
 public sealed record AiPreviewRequest(ExportRequest Export, double Position);
 public sealed record TrimRange(double Start, double End)
 {
@@ -58,8 +58,13 @@ public static class ExportSettings
         if (c is null || c.X < 0 || c.Y < 0 || c.Width < 1 || c.Height < 1 ||
             (long)c.X + c.Width > source.Width || (long)c.Y + c.Height > source.Height)
             throw new MediaException("Область кадрирования выходит за границы видео.");
-        if (request.Scale is < 1 or > 100 || request.Fps is not (24 or 25 or 30 or 50 or 60))
+        if (request.Scale is < 1 or > 100 || (request.Interpolation is null && request.Fps is not (24 or 25 or 30 or 50 or 60)))
             throw new MediaException("Недопустимый масштаб или FPS.");
+        if (request.Interpolation is not null)
+        {
+            RifeCatalog.Validate(request.Interpolation);
+            _ = FrameRate.Source(source).Multiply(request.Interpolation.Multiplier);
+        }
         if (request.Upscale is not null)
         {
             AiCatalog.Validate(request.Upscale);

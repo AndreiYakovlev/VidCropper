@@ -40,6 +40,7 @@ builder.Services.AddSingleton<MediaStore>();
 builder.Services.AddSingleton<ProcessingGate>();
 builder.Services.AddSingleton(new AiCatalog());
 builder.Services.AddSingleton<AiRunner>();
+builder.Services.AddSingleton<RifeRunner>();
 builder.Services.AddSingleton<AiPackages>();
 builder.Services.AddSingleton<AiPipeline>();
 builder.Services.AddSingleton<FrameWorkspace>();
