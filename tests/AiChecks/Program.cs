@@ -34,6 +34,9 @@ var env = new TestEnvironment { ContentRootPath = root };
 var packages = new AiPackages(catalog, env, gate, runner, lifetime, NullLogger<AiPackages>.Instance);
 int assertions = 0;
 void Check(bool condition, string name) { if (!condition) throw new Exception(name); assertions++; Console.WriteLine("PASS " + name); }
+Check(tools.PngThreads == Math.Max(1, Environment.ProcessorCount / 2), "default PNG threads use half of available logical processors");
+Check(new MediaTools(new() { PngThreads = 3 }, NullLogger<MediaTools>.Instance).PngThreads == 3, "explicit PNG thread count overrides automatic selection");
+Check(new MediaTools(new() { PngThreads = 1 }, NullLogger<MediaTools>.Instance).PngThreads == 1, "single-thread PNG encoding remains configurable");
 var clock = new TestClock();
 var timer = new ProcessingTimer(clock);
 timer.Report("extract",0,100);

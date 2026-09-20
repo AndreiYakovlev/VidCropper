@@ -175,7 +175,7 @@ public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages pac
         report(new("resize", "Подготовка разрешения", 0, input.Count));
         await tools.RunAsync(false, ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-framerate", input.Fps.ToString(),
             "-start_number", input.StartNumber.ToString(CultureInfo.InvariantCulture), "-i", Path.Combine(input.Directory, input.Pattern),
-            "-vf", ExportFilters.Resize(output.Width, output.Height), "-pix_fmt", "rgb24", "-threads", "1",
+            "-vf", ExportFilters.Resize(output.Width, output.Height), "-pix_fmt", "rgb24", "-threads:v", tools.PngThreads.ToString(CultureInfo.InvariantCulture),
             "-progress", "pipe:1", "-nostats", Path.Combine(output.Directory, output.Pattern)], line =>
         {
             if (line.StartsWith("frame=", StringComparison.Ordinal) && long.TryParse(line.AsSpan(6).Trim(), out var frame))
@@ -194,7 +194,7 @@ public sealed class AiPipeline(MediaTools tools, AiRunner runner, AiPackages pac
             ["-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-noaccurate_seek",
             "-ss", ExportFilters.Number(trim.Start), "-i", source.Path, "-t", ExportFilters.Number(trim.Duration),
             "-map", $"0:{source.Info.StreamIndex}", "-vf", ExportFilters.Crop(request, source.Info), "-an",
-            "-c:v", "png", "-pix_fmt", "rgb24", "-threads", "1", "-f", "image2pipe", "pipe:1"], ct, pipeOutput: true);
+            "-c:v", "png", "-pix_fmt", "rgb24", "-threads:v", tools.PngThreads.ToString(CultureInfo.InvariantCulture), "-f", "image2pipe", "pipe:1"], ct, pipeOutput: true);
         long count = 0;
         while (true)
         {

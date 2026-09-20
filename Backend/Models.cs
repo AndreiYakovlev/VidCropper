@@ -4,6 +4,8 @@ public sealed class MediaOptions
 {
     public string FfmpegPath { get; set; } = "";
     public string FfprobePath { get; set; } = "";
+    // Zero selects half of the logical processors available to this process, at least one.
+    public int PngThreads { get; set; } = 0;
     public long MaxUploadBytes { get; set; } = 10L * 1024 * 1024 * 1024;
 }
 

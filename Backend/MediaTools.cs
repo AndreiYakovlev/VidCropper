@@ -7,6 +7,13 @@ namespace VidCropper.Backend;
 
 public sealed class MediaTools(MediaOptions options, ILogger<MediaTools> logger)
 {
+    public int PngThreads { get; } = options.PngThreads switch
+    {
+        < 0 => throw new ArgumentOutOfRangeException(nameof(options.PngThreads), "Media:PngThreads должен быть неотрицательным."),
+        0 => Math.Max(1, Environment.ProcessorCount / 2),
+        _ => options.PngThreads
+    };
+
     public string FfmpegExecutable
     {
         get

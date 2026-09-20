@@ -15,6 +15,7 @@ if (!int.TryParse(portValue, out var port) || port is < 0 or > 65535)
 }
 var mediaOptions = builder.Configuration.GetSection("Media").Get<MediaOptions>() ?? new();
 if (mediaOptions.MaxUploadBytes < 1) { Console.Error.WriteLine("Media:MaxUploadBytes должен быть положительным."); return 1; }
+if (mediaOptions.PngThreads < 0) { Console.Error.WriteLine("Media:PngThreads должен быть 0 (автоматически) или положительным числом потоков."); return 1; }
 if (builder.Configuration.GetValue<bool>("InstallTools"))
 {
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(10));
