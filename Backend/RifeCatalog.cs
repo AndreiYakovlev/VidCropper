@@ -20,7 +20,7 @@ public static class RifeCatalog
     ];
     public static readonly AiModel[] Models = Versions.Select(id => new AiModel(id,
         "RIFE " + id[6..], "Интерполяция 2× / 3×. Vulkan; длительность и скорость звука сохраняются.",
-        "rife", id, 1)).ToArray();
+        "rife", id, 1, [2, 3])).ToArray();
 
     public static AiModel Validate(InterpolationRequest request)
     {

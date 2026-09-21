@@ -4,7 +4,8 @@ import { state, subscribe, update } from "./state.js";
 import { processingTimeText } from "./processing-time.mjs";
 import { exportRequest } from "./backend.js";
 import { pixelCrop } from "./geometry.mjs";
-import { upscaleSize } from "./upscale.mjs";
+import { allowedScale, upscaleSize } from "./upscale.mjs";
+import { setupAiComparison } from "./ai-comparison.js";
 
 const $ = (id) => document.getElementById(id);
 const terminal = (status) => ["completed", "failed", "cancelled"].includes(status);
@@ -14,12 +15,21 @@ export function setupUpscaler(video) {
   let preview = null, events = null, startingPreview = null;
   let previewSignature = null, generation = 0, previewReady = false, closing = false;
   const dialog = $('ai-preview-dialog'), before = $('ai-before'), after = $('ai-after');
+  const comparisonView = setupAiComparison(before, after);
   const signature = () => state.crop ? JSON.stringify(exportRequest()) : null;
   function render() {
-    $('ai-scale').value = String(state.aiScale);
-    $('rife-multiplier').value = String(state.rifeMultiplier);
     const model = state.aiModels.find(m => m.id === state.aiModel);
+    const scales = model?.allowedScales?.length ? model.allowedScales : [2, 3, 4];
+    const scaleSelect = $('ai-scale');
+    if (scaleSelect.options.length !== scales.length ||
+        scales.some((scale, index) => scaleSelect.options[index]?.value !== String(scale)))
+      scaleSelect.replaceChildren(...scales.map(scale => new Option(`×${scale}`, String(scale))));
+    const selectedScale = allowedScale(model, state.aiScale);
+    if (selectedScale !== state.aiScale) { update({ aiScale: selectedScale }); return; }
+    scaleSelect.value = String(selectedScale);
+    $('rife-multiplier').value = String(state.rifeMultiplier);
     $('ai-native-note').hidden = !model || model.variableScale || model.nativeScale === state.aiScale;
+    if (model) $('ai-native-note').textContent = `Модель обрабатывает в ×${model.nativeScale}, затем изображение уменьшается до выбранного размера.`;
     if (state.crop) {
       const crop = pixelCrop(state.crop, state), size = upscaleSize(crop, state.aiScale);
       $('ai-size').textContent = `${crop.width} × ${crop.height} → ${size.width} × ${size.height} px`;
@@ -62,6 +72,7 @@ export function setupUpscaler(video) {
       before.src = `/api/ai/previews/${snapshot.id}/before`;
       after.src = `/api/ai/previews/${snapshot.id}/after`;
       previewReady = true;
+      comparisonView.setReady(true);
       $("ai-preview-seek").max = String(snapshot.result.duration);
       $("ai-preview-seek").disabled = false;
       $("ai-preview-play").disabled = false;
@@ -82,6 +93,7 @@ export function setupUpscaler(video) {
       player.load();
     }
     previewReady = false;
+    comparisonView.reset();
     previewSignature = null;
     let previous = preview;
     preview = null;
@@ -131,6 +143,7 @@ export function setupUpscaler(video) {
     const request = exportRequest();
     previewSignature = signature();
     update({ busyPreview: true, busyExport: true });
+    comparisonView.reset();
     $("ai-preview-stale").hidden = true;
     $("ai-preview-progress").hidden = false;
     $("ai-preview-progress").value = 0;

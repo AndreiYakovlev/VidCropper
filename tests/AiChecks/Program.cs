@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Formats.Tar;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -34,6 +35,15 @@ var env = new TestEnvironment { ContentRootPath = root };
 var packages = new AiPackages(catalog, env, gate, runner, lifetime, NullLogger<AiPackages>.Instance);
 int assertions = 0;
 void Check(bool condition, string name) { if (!condition) throw new Exception(name); assertions++; Console.WriteLine("PASS " + name); }
+Check(AiCatalog.Models.Length == 8, "upscaler catalog exposes eight reviewed models");
+Check(AiCatalog.Validate(new("realesr-general-x4v3", 3)).NativeScale == 4, "RealisticVideo supports final x2/x3/x4 sizes");
+Check(AiCatalog.Validate(new("spankendata", 2)).NativeScale == 4, "SPANkendata supports final x2/x3/x4 sizes");
+Check(AiCatalog.Validate(new("openproteus", 2)).NativeScale == 2, "OpenProteus supports native x2");
+try { AiCatalog.Validate(new("openproteus", 3)); throw new Exception("OpenProteus x3 accepted"); }
+catch (MediaException) { Check(true, "OpenProteus rejects unsupported scales"); }
+var compactPackage = new AiCatalog().Latest("upscayl");
+Check(compactPackage.PassNativeScale && compactPackage.SupplementalArtifacts?.Length == 2,
+    "compact models use an executor with explicit native scale and pinned artifacts");
 Check(tools.PngThreads == Math.Max(1, Environment.ProcessorCount / 2), "default PNG threads use half of available logical processors");
 Check(new MediaTools(new() { PngThreads = 3 }, NullLogger<MediaTools>.Instance).PngThreads == 3, "explicit PNG thread count overrides automatic selection");
 Check(new MediaTools(new() { PngThreads = 1 }, NullLogger<MediaTools>.Instance).PngThreads == 1, "single-thread PNG encoding remains configurable");
@@ -77,6 +87,22 @@ byte[] Zip(bool traversal = false, bool missing = false)
             using var writer = new StreamWriter(zip.CreateEntry(traversal ? "../escape" : name).Open()); writer.Write("test fixture " + name);
             if (traversal) break;
         }
+    return stream.ToArray();
+}
+byte[] TarGzip(bool traversal = false)
+{
+    using var stream = new MemoryStream();
+    using (var gzip = new GZipStream(stream, CompressionLevel.SmallestSize, true))
+    using (var tar = new TarWriter(gzip, leaveOpen: true))
+    {
+        foreach (var name in traversal
+            ? new[] { "../escape" }
+            : new[] { "supplement/4xSPANkendata.param", "supplement/4xSPANkendata.bin" })
+        {
+            var data = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("test fixture " + name));
+            tar.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, name) { DataStream = data });
+        }
+    }
     return stream.ToArray();
 }
 try
@@ -127,6 +153,40 @@ try
     Check((await packages.CancelAsync(cancel.Id)).Status == "cancelled", "cancel download");
     releases.RemoveAt(releases.Count - 1);
     Check(!gate.Busy, "cancel releases shared gate");
+
+    var artifactRoot = Path.Combine(root, "artifact-fixture");
+    var artifactEnv = new TestEnvironment { ContentRootPath = artifactRoot };
+    var artifactBase = Zip();
+    var artifactSupplement = TarGzip();
+    downloads["artifact-base"] = artifactBase;
+    downloads["artifact-supplement"] = artifactSupplement;
+    var artifactModels = new[] { AiCatalog.Model("nomos-weak"), AiCatalog.Model("spankendata") };
+    AiPackage ArtifactRelease(string version, byte[] supplement, string endpoint = "artifact-supplement") => new(
+        "span", version, url + "/artifact-base", artifactBase.Length, Convert.ToHexString(SHA256.HashData(artifactBase)),
+        "", "fake.exe", "models", "https://example.invalid/base", "test only", artifactModels,
+        SupplementalArtifacts: [new(url + "/" + endpoint, supplement.Length, Convert.ToHexString(SHA256.HashData(supplement)),
+            AiArchiveKind.TarGzip, "supplement/", "models", "https://example.invalid/model", "test only")]);
+    var artifactReleases = new List<AiPackage> { ArtifactRelease("artifact-v1", artifactSupplement) };
+    var artifactGate = new ProcessingGate();
+    var artifactPackages = new AiPackages(new(artifactReleases), artifactEnv, artifactGate, runner, lifetime, NullLogger<AiPackages>.Instance);
+    async Task<AiOperation> FinishArtifact(AiOperation op)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (op.Status is "queued" or "running") { await Task.Delay(10, deadline.Token); op = artifactPackages.Get(op.Id); }
+        while (artifactGate.Busy) await Task.Delay(1, deadline.Token);
+        return op;
+    }
+    Check((await FinishArtifact(artifactPackages.Start("spankendata", "install"))).Status == "completed", "supplemental tar.gz model installs");
+    var artifactInstallation = artifactPackages.Resolve(new("spankendata", 4));
+    var artifactReceipt = JsonSerializer.Deserialize<AiReceipt>(await File.ReadAllTextAsync(Path.Combine(artifactInstallation.Directory, "receipt.json")))!;
+    Check(File.Exists(Path.Combine(artifactInstallation.ModelsPath, "4xSPANkendata.bin")) && artifactReceipt.ArtifactSha256s?.Length == 2,
+        "supplemental model and artifact hashes are recorded");
+    var traversalTar = TarGzip(traversal: true);
+    downloads["artifact-traversal"] = traversalTar;
+    artifactReleases.Add(ArtifactRelease("artifact-v2", traversalTar, "artifact-traversal"));
+    Check((await FinishArtifact(artifactPackages.Start("spankendata", "install"))).Status == "failed" &&
+        artifactPackages.Resolve(new("spankendata", 4)).Package.Version == "artifact-v1", "supplemental traversal is rejected and active package preserved");
+    await artifactPackages.StopAsync(default);
 
     var workspace = new TestWorkspace(env);
     var foreign = Path.Combine(root,"temp","ai","foreign-session","keep.txt");

@@ -36,7 +36,10 @@ AI-исполнители скачиваются по требованию не�
 
 - **SPAN-ncnn-vulkan**, TNTwise / Upscayl: GNU AGPL v3, файл `LICENSE` сохраняется из архива. Соответствующие исходники: https://github.com/TNTwise/SPAN-ncnn-vulkan/tree/20240831-055257 .
 - **Nomos8k SPAN OTF Weak / Medium / Strong**, Helaman (Philip Hofmann): CC BY 4.0; преобразованные NCNN-веса поставлены в архиве SPAN. Авторские карточки: https://openmodeldb.info/models/4x-Nomos8k-span-otf-weak , https://openmodeldb.info/models/4x-Nomos8k-span-otf-medium , https://openmodeldb.info/models/4x-Nomos8k-span-otf-strong . Условия: https://creativecommons.org/licenses/by/4.0/ . VidCropper веса не изменяет.
-- **Real-ESRGAN / AnimeVideo v3**, Xintao Wang и участники: BSD 3-Clause; https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0 .
+- **SPANkendata**, Crustaceous D / terrainer: CC BY-SA 4.0; NCNN-веса поставлены в закреплённом архиве SPAN. Карточка и исходные веса: https://openmodeldb.info/models/4x-SPANkendata . Условия: https://creativecommons.org/licenses/by-sa/4.0/ .
+- **Real-ESRGAN / AnimeVideo v3 / realesr-general-x4v3 (RealisticVideo)**, Xintao Wang и участники: BSD 3-Clause; https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.3.0 . NCNN-веса `realesr-general-x4v3` загружаются из закреплённого архива проекта REAL Video Enhancer Models без изменения.
+- **OpenProteus**, SiroSky: CC BY-NC 4.0; исходная модель и описание: https://github.com/Sirosky/Upscale-Hub/releases/tag/OpenProteus . NCNN-веса загружаются из закреплённого архива проекта REAL Video Enhancer Models без изменения. Условия: https://creativecommons.org/licenses/by-nc/4.0/ .
+- **upscayl-ncnn**, Upscayl: GNU AGPL v3; совместимый исполнитель используется для compact-моделей OpenProteus и `realesr-general-x4v3`. Исходники: https://github.com/upscayl/upscayl-ncnn/tree/20251207-174704 . Файл `LICENSE` сохраняется из архива рядом с установленным исполнителем.
 - **Real-ESRGAN-ncnn-vulkan**: MIT; https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/tree/v0.2.0 . Оригинальные тексты лицензий находятся в `licenses/ai` и копируются рядом с установленным пакетом.
 - NCNN и включённые runtime-компоненты сохраняют собственные лицензии. Источник NCNN: https://github.com/Tencent/ncnn .
 

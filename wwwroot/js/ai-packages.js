@@ -14,8 +14,12 @@ export function setupModelPanel(prefix, catalogKey) {
   const $ = suffix => document.getElementById(`${prefix}-${suffix}`);
   const key = suffix => prefix + suffix;
   let catalog = null, operation = null, timer = null, loading = false, error = null, disposed = false;
-  const selected = () => catalog?.packages.find(p => p.family === catalog?.[catalogKey].find(m => m.id === state[key('Model')])?.family);
-  function ready() { return Boolean(catalog?.supported && selected()?.installed); }
+  const selectedModel = () => catalog?.[catalogKey].find(m => m.id === state[key('Model')]);
+  const selected = () => catalog?.packages.find(p => p.family === selectedModel()?.family);
+  function ready() {
+    const pkg = selected();
+    return Boolean(catalog?.supported && pkg?.installed && pkg.activeModels.includes(state[key('Model')]));
+  }
   async function refresh() {
     if (loading) return;
     loading = true; error = null; render();
@@ -36,11 +40,12 @@ export function setupModelPanel(prefix, catalogKey) {
     $('retry-catalog').hidden = !error;
     $('retry-catalog').disabled = busy || loading;
     const pkg = selected();
+    const modelAvailable = pkg?.activeModels.includes(state[key('Model')]);
     $('package-status').textContent = catalog && !catalog.supported ? 'AI-модуль поддерживает Windows x64.' : !pkg ? error ?? 'Получение каталога…' :
-      `${pkg.installed ? `Установлена версия ${pkg.activeVersion}.` : 'Требуется установка или восстановление.'} ${pkg.updateAvailable ? 'Доступно обновление. ' : ''}${!pkg.installed || pkg.updateAvailable ? `Загрузка: ${(pkg.downloadBytes / 1024 ** 2).toFixed(1)} МиБ.` : ''}`;
+      `${pkg.installed ? `Установлена версия ${pkg.activeVersion}.` : 'Требуется установка или восстановление.'} ${pkg.installed && !modelAvailable ? 'Выбранная модель доступна после обновления. ' : ''}${pkg.updateAvailable ? 'Доступно обновление. ' : ''}${!pkg.installed || pkg.updateAvailable ? `Загрузка: ${(pkg.downloadBytes / 1024 ** 2).toFixed(1)} МиБ.` : ''}`;
     $('install').textContent = pkg?.updateAvailable ? 'Обновить AI-модуль' : pkg?.activeVersion ? 'Восстановить AI-модуль' : prefix === 'rife' ? 'Скачать полный пакет' : 'Скачать необходимые компоненты';
     $('install').disabled = !pkg;
-    $('rollback').hidden = !pkg?.canRollback;
+    $('rollback').hidden = !pkg?.canRollback || !pkg.previousModels.includes(state[key('Model')]);
     $('check').hidden = !pkg?.installed;
   }
   function accept(snapshot) {

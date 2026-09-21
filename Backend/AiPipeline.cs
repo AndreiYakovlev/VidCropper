@@ -18,8 +18,14 @@ public class AiRunner(MediaTools tools)
 {
     public virtual async Task RunAsync(AiInstallation installation, string input, string output, int scale, CancellationToken ct, Action<string>? completed = null)
     {
-        var args = new[] { "-i", input, "-o", output, "-m", installation.ModelsPath, "-n", installation.Model.FileName,
-            "-s", scale.ToString(CultureInfo.InvariantCulture), "-f", "png", "-j", "1:1:1", "-v" };
+        var args = new List<string> { "-i", input, "-o", output, "-m", installation.ModelsPath, "-n", installation.Model.FileName };
+        if (installation.Package.PassNativeScale)
+            args.AddRange(["-z", installation.Model.NativeScale.ToString(CultureInfo.InvariantCulture)]);
+        args.AddRange(["-s", scale.ToString(CultureInfo.InvariantCulture), "-f", "png", "-j", "4:4:4", "-v"]);
+        using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var monitor = installation.Package.PassNativeScale && completed is not null
+            ? MonitorCompletedFramesAsync(output, completed, monitorStop.Token)
+            : Task.CompletedTask;
         try
         {
             await using var process = new MediaProcess(installation.Executable, args, ct, onLine: line =>
@@ -29,11 +35,58 @@ public class AiRunner(MediaTools tools)
                     completed?.Invoke(Path.GetFileName(line[(marker + 4)..^5]));
             });
             await process.CompleteAsync(ct);
+            monitorStop.Cancel();
+            await monitor;
+            if (installation.Package.PassNativeScale && completed is not null)
+                foreach (var file in Directory.EnumerateFiles(output, "*.png")) completed(Path.GetFileName(file));
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             throw new MediaException($"AI-модель не смогла обработать кадры. Проверьте поддержку Vulkan, драйвер видеокарты и свободную видеопамять. {e.Message}", 422);
         }
+        finally
+        {
+            monitorStop.Cancel();
+            try { await monitor; }
+            catch (OperationCanceledException) { }
+        }
+    }
+
+    private static async Task MonitorCompletedFramesAsync(string output, Action<string> completed, CancellationToken ct)
+    {
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            while (true)
+            {
+                foreach (var file in Directory.EnumerateFiles(output, "*.png"))
+                {
+                    var name = Path.GetFileName(file);
+                    if (!reported.Contains(name) && IsCompletePng(file))
+                    {
+                        reported.Add(name);
+                        completed(name);
+                    }
+                }
+                await Task.Delay(250, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    private static bool IsCompletePng(string path)
+    {
+        ReadOnlySpan<byte> end = [0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (stream.Length < end.Length) return false;
+            Span<byte> actual = stackalloc byte[end.Length];
+            stream.Position = stream.Length - end.Length;
+            return stream.Read(actual) == actual.Length && actual.SequenceEqual(end);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     public virtual async Task CheckAsync(AiInstallation installation, CancellationToken ct)

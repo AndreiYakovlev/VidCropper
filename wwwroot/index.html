@@ -516,28 +516,63 @@
           ×
         </button>
       </div>
-      <p id="ai-preview-status" role="status">Подготовка…</p>
-      <p id="ai-preview-timing" class="processing-timing"></p>
+      <div class="ai-preview-operation">
+        <div class="ai-preview-operation-copy">
+          <p id="ai-preview-status" role="status">Подготовка…</p>
+          <p id="ai-preview-timing" class="processing-timing"></p>
+        </div>
+        <progress id="ai-preview-progress" max="100" aria-label="Прогресс пробы"></progress>
+        <div class="ai-preview-job-actions">
+          <button id="ai-preview-cancel" class="button secondary" type="button">Отменить</button>
+          <button id="ai-preview-retry" class="button secondary" type="button" hidden>
+            Повторить пробу
+          </button>
+          <button id="ai-preview-dismiss" class="text-button" type="button">Закрыть</button>
+        </div>
+      </div>
       <p id="ai-preview-stale" class="meta-note" hidden>
         Настройки изменились. Эта проба устарела — создайте новую.
       </p>
-      <progress id="ai-preview-progress" max="100" aria-label="Прогресс пробы"></progress>
-      <div class="ai-preview-controls">
-        <button id="ai-preview-cancel" class="button secondary" type="button">Отменить</button>
-        <button id="ai-preview-retry" class="button secondary" type="button" hidden>
-          Повторить пробу
+      <div class="ai-view-toolbar" aria-label="Режим сравнения и масштаб">
+        <div class="ai-view-group" role="group" aria-label="Режим сравнения">
+          <button id="ai-mode-split" class="text-button" type="button" aria-pressed="true">Разделитель</button>
+          <button id="ai-mode-toggle" class="text-button" type="button" aria-pressed="false">Переключение</button>
+          <button id="ai-mode-side" class="text-button" type="button" aria-pressed="false">Рядом</button>
+        </div>
+        <div class="ai-view-group" role="group" aria-label="Масштаб сравнения">
+          <button id="ai-zoom-fit" class="text-button" type="button" aria-pressed="true">Вписать</button>
+          <button id="ai-zoom-100" class="text-button" type="button" aria-pressed="false">100%</button>
+          <button id="ai-zoom-200" class="text-button" type="button" aria-pressed="false">200%</button>
+          <button id="ai-zoom-400" class="text-button" type="button" aria-pressed="false">400%</button>
+        </div>
+        <button id="ai-hold-before" class="button secondary ai-hold-before" type="button" disabled>
+          Удерживать «До»
         </button>
-        <button id="ai-preview-dismiss" class="text-button" type="button">Закрыть</button>
       </div>
-      <div class="ai-comparison">
-        <figure>
-          <figcaption>До · без AI</figcaption>
-          <video id="ai-before" muted playsinline preload="auto"></video>
-        </figure>
-        <figure>
-          <figcaption>После · AI</figcaption>
-          <video id="ai-after" muted playsinline preload="auto"></video>
-        </figure>
+      <p id="ai-view-hint" class="ai-view-hint">
+        Колесо — масштаб · перетаскивание — перемещение · двойной щелчок — 100% / вписать
+      </p>
+      <div id="ai-comparison" class="ai-comparison mode-split">
+        <div id="ai-comparison-viewport" class="ai-comparison-viewport" tabindex="0" aria-label="Сравнение видео до и после AI" aria-describedby="ai-view-hint">
+          <div class="ai-video-pane ai-before-pane">
+            <video id="ai-before" muted playsinline preload="auto"></video>
+            <span class="ai-pane-label">До · без AI</span>
+          </div>
+          <div id="ai-after-clip" class="ai-video-pane ai-after-pane">
+            <video id="ai-after" muted playsinline preload="auto"></video>
+            <span class="ai-pane-label">После · AI</span>
+          </div>
+          <button
+            id="ai-compare-divider"
+            class="ai-compare-divider"
+            type="button"
+            role="slider"
+            aria-label="Граница до и после"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="50"
+          ><span aria-hidden="true">↔</span></button>
+        </div>
       </div>
       <div class="ai-preview-controls">
         <button

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Formats.Tar;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -11,10 +12,11 @@ public sealed record AiInstallation(AiPackage Package, string Directory, AiModel
 }
 public sealed record AiPackageState(string? Active = null, string? Previous = null);
 public sealed record AiInstalledFile(string Path, long Bytes, string Sha256);
-public sealed record AiReceipt(string ArchiveSha256, AiInstalledFile[] Files);
+public sealed record AiReceipt(string ArchiveSha256, AiInstalledFile[] Files, string[]? ArtifactSha256s = null);
 public sealed record AiOperation(Guid Id, string Status, string Stage, double? Progress, string? Error);
 public sealed record AiPackageStatus(string Family, string Version, string? ActiveVersion, string? PreviousVersion,
-    bool Installed, bool UpdateAvailable, bool CanRollback, long DownloadBytes, string License, string SourceUrl);
+    bool Installed, bool UpdateAvailable, bool CanRollback, long DownloadBytes, string License, string SourceUrl,
+    string[] ActiveModels, string[] PreviousModels);
 
 public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environment, ProcessingGate gate,
     AiRunner runner, IHostApplicationLifetime lifetime, ILogger<AiPackages> logger, RifeRunner? rifeRunner = null) : IHostedService
@@ -47,6 +49,18 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         finally { File.Delete(temp); }
     }
     private AiPackage? Known(string family, string? version) => catalog.Packages.FirstOrDefault(p => p.Family == family && p.Version == version);
+    private static IEnumerable<string> ArtifactHashes(AiPackage package) =>
+        new[] { package.Sha256 }.Concat(package.SupplementalArtifacts?.Select(artifact => artifact.Sha256) ?? []);
+    private static long DownloadBytes(AiPackage package) => checked(package.Bytes +
+        (package.SupplementalArtifacts?.Sum(artifact => artifact.Bytes) ?? 0));
+    private static bool ReceiptMatches(AiPackage package, AiReceipt receipt)
+    {
+        if (!receipt.ArchiveSha256.Equals(package.Sha256, StringComparison.OrdinalIgnoreCase)) return false;
+        var expected = ArtifactHashes(package).ToArray();
+        if (expected.Length == 1) return receipt.ArtifactSha256s is null ||
+            receipt.ArtifactSha256s.SequenceEqual(expected, StringComparer.OrdinalIgnoreCase);
+        return receipt.ArtifactSha256s?.SequenceEqual(expected, StringComparer.OrdinalIgnoreCase) == true;
+    }
 
     private bool Present(AiPackage? package)
     {
@@ -54,7 +68,7 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         try
         {
             var receipt = JsonSerializer.Deserialize<AiReceipt>(File.ReadAllText(Path.Combine(Folder(package), "receipt.json")));
-            return receipt is not null && receipt.ArchiveSha256 == package.Sha256 &&
+            return receipt is not null && ReceiptMatches(package, receipt) &&
                 Required(package).All(name => receipt.Files.Any(f => f.Path == name)) &&
                 receipt.Files.All(f => new FileInfo(SafePath(Folder(package), f.Path)) is { Exists: true } info && info.Length == f.Bytes);
         }
@@ -75,7 +89,8 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             var previous = Known(family, state.Previous);
             return new AiPackageStatus(family, latest.Version, state.Active, state.Previous,
                 Present(active), active is not null && active.Version != latest.Version,
-                Present(previous) && state.Previous != state.Active, latest.Bytes, latest.License, latest.SourceUrl);
+                Present(previous) && state.Previous != state.Active, DownloadBytes(latest), latest.License, latest.SourceUrl,
+                active?.Models.Select(model => model.Id).ToArray() ?? [], previous?.Models.Select(model => model.Id).ToArray() ?? []);
         }).ToArray()
     };
 
@@ -161,7 +176,10 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         var target = action == "rollback"
             ? Known(model.Family, state.Previous) ?? throw new MediaException("Предыдущая версия отсутствует.", 409)
             : catalog.Latest(model.Family);
-        var targetModel = target.Models.Single(m => m.Id == model.Id);
+        var targetModel = target.Models.SingleOrDefault(m => m.Id == model.Id)
+            ?? throw new MediaException(action == "rollback"
+                ? "Предыдущая версия пакета не поддерживает выбранную модель. Выберите модель из предыдущего пакета."
+                : "Последняя версия AI-пакета не поддерживает выбранную модель.", 409);
         if (Present(target))
         {
             var installed = new AiInstallation(target, Folder(target), targetModel);
@@ -187,29 +205,26 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         try
         {
             var archive = Path.Combine(scratch, "package.zip");
+            var supplemental = target.SupplementalArtifacts ?? [];
+            var supplementalArchives = new string[supplemental.Length];
+            var totalBytes = DownloadBytes(target);
+            long downloadedBytes = 0;
             using var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("VidCropper/1.0");
-            using (var response = await client.GetAsync(target.Url, HttpCompletionOption.ResponseHeadersRead, ct))
+            await DownloadAsync(client, target.Url, archive, target.Bytes, target.Sha256, downloadedBytes, totalBytes, report, ct);
+            downloadedBytes += target.Bytes;
+            for (var index = 0; index < supplemental.Length; index++)
             {
-                response.EnsureSuccessStatusCode();
-                await using var input = await response.Content.ReadAsStreamAsync(ct);
-                await using var output = File.Create(archive);
-                var buffer = new byte[65536]; long total = 0; int count;
-                while ((count = await input.ReadAsync(buffer, ct)) > 0)
-                {
-                    total += count;
-                    if (total > target.Bytes) throw new MediaException("Размер AI-пакета не совпадает с каталогом.");
-                    await output.WriteAsync(buffer.AsMemory(0, count), ct);
-                    report("Скачивание AI-пакета…", total * 100d / target.Bytes);
-                }
-                if (total != target.Bytes) throw new MediaException("AI-пакет скачан не полностью.");
+                var artifact = supplemental[index];
+                var path = Path.Combine(scratch, $"artifact-{index}.tar.gz");
+                supplementalArchives[index] = path;
+                await DownloadAsync(client, artifact.Url, path, artifact.Bytes, artifact.Sha256,
+                    downloadedBytes, totalBytes, report, ct);
+                downloadedBytes += artifact.Bytes;
             }
-            await using (var stream = File.OpenRead(archive))
-                if (!Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).Equals(target.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new MediaException("Контрольная сумма AI-пакета не совпала. Установка отменена.");
             report("Распаковка и проверка…", null);
             var staged = Path.Combine(scratch, "ready"); Directory.CreateDirectory(staged);
-            await ExtractAsync(target, archive, staged, ct);
+            await ExtractAsync(target, archive, supplementalArchives, staged, ct);
             if (target.Family == "realesrgan")
                 foreach (var name in new[] { "Real-ESRGAN.txt", "Real-ESRGAN-ncnn-vulkan.txt" })
                     File.Copy(Path.Combine(environment.ContentRootPath, "licenses", "ai", name), Path.Combine(staged, name));
@@ -239,6 +254,30 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
         finally { TryClean(scratch); }
     }
 
+    private static async Task DownloadAsync(HttpClient client, string url, string path, long expectedBytes, string expectedSha256,
+        long completedBytes, long totalBytes, Action<string, double?> report, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        await using var input = await response.Content.ReadAsStreamAsync(ct);
+        var buffer = new byte[65536]; long downloaded = 0; int count;
+        await using (var output = File.Create(path))
+        {
+            while ((count = await input.ReadAsync(buffer, ct)) > 0)
+            {
+                downloaded += count;
+                if (downloaded > expectedBytes) throw new MediaException("Размер AI-пакета не совпадает с каталогом.");
+                await output.WriteAsync(buffer.AsMemory(0, count), ct);
+                report("Скачивание AI-пакета…", (completedBytes + downloaded) * 100d / totalBytes);
+            }
+            await output.FlushAsync(ct);
+        }
+        if (downloaded != expectedBytes) throw new MediaException("AI-пакет скачан не полностью.");
+        await using var stream = File.OpenRead(path);
+        if (!Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
+            throw new MediaException("Контрольная сумма AI-пакета не совпала. Установка отменена.");
+    }
+
     private static HashSet<string> Required(AiPackage p)
     {
         if (p.RequiredFiles is not null) return new(p.RequiredFiles, StringComparer.Ordinal);
@@ -257,10 +296,37 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             throw new MediaException("Недопустимый путь внутри AI-пакета.");
         return full;
     }
-    private static async Task ExtractAsync(AiPackage p, string archive, string destination, CancellationToken ct)
+    private static async Task ExtractAsync(AiPackage p, string archive, string[] supplementalArchives,
+        string destination, CancellationToken ct)
     {
         var required = Required(p);
         var extracted = new List<AiInstalledFile>();
+        await ExtractZipAsync(p, archive, destination, required, extracted, ct);
+        var artifacts = p.SupplementalArtifacts ?? [];
+        if (artifacts.Length != supplementalArchives.Length) throw new InvalidOperationException("AI artifact list mismatch.");
+        for (var index = 0; index < artifacts.Length; index++)
+        {
+            if (artifacts[index].Kind != AiArchiveKind.TarGzip) throw new MediaException("Неизвестный формат AI-пакета.");
+            await ExtractTarGzipAsync(artifacts[index], supplementalArchives[index], destination, required, extracted, ct);
+        }
+        if (!required.IsSubsetOf(extracted.Select(f => f.Path))) throw new MediaException("В AI-пакете отсутствуют необходимые файлы.");
+        var sources = new List<string> { p.SourceUrl, p.License };
+        foreach (var artifact in artifacts)
+        {
+            sources.Add(artifact.SourceUrl);
+            sources.Add(artifact.License);
+        }
+        if (p.Family == "span")
+            sources.AddRange(["Nomos8k author: Helaman / Philip Hofmann", "https://openmodeldb.info/models/4x-Nomos8k-span-otf-medium",
+                "SPANkendata author: Crustaceous D / terrainer", "https://openmodeldb.info/models/4x-SPANkendata"]);
+        await File.WriteAllTextAsync(Path.Combine(destination, "SOURCES.txt"), string.Join('\n', sources) + "\n", ct);
+        await File.WriteAllTextAsync(Path.Combine(destination, "receipt.json"),
+            JsonSerializer.Serialize(new AiReceipt(p.Sha256, extracted.ToArray(), ArtifactHashes(p).ToArray())), ct);
+    }
+
+    private static async Task ExtractZipAsync(AiPackage p, string archive, string destination, HashSet<string> required,
+        List<AiInstalledFile> extracted, CancellationToken ct)
+    {
         using var zip = ZipFile.OpenRead(archive);
         foreach (var entry in zip.Entries)
         {
@@ -270,19 +336,47 @@ public sealed class AiPackages(AiCatalog catalog, IWebHostEnvironment environmen
             var relative = entry.FullName[p.ArchiveRoot.Length..];
             if (relative.Length == 0 || entry.FullName.EndsWith('/')) continue;
             if (!p.ExtractAll && !required.Contains(relative)) continue;
-            if (entry.Length > 128L * 1024 * 1024 || extracted.Any(f => f.Path == relative)) throw new MediaException("Некорректный архив AI.");
-            var path = SafePath(destination, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await using (var input = entry.Open())
-            await using (var output = File.Create(path)) await input.CopyToAsync(output, ct);
-            await using var stream = File.OpenRead(path);
-            extracted.Add(new(relative, stream.Length, Convert.ToHexString(await SHA256.HashDataAsync(stream, ct))));
+            await using var input = entry.Open();
+            await ExtractFileAsync(input, entry.Length, relative, destination, extracted, ct);
         }
-        if (!required.IsSubsetOf(extracted.Select(f => f.Path))) throw new MediaException("В AI-пакете отсутствуют необходимые файлы.");
-        await File.WriteAllTextAsync(Path.Combine(destination, "SOURCES.txt"), $"{p.SourceUrl}\n{p.License}\n" +
-            (p.Family == "span" ? "Nomos8k author: Helaman / Philip Hofmann\nhttps://openmodeldb.info/models/4x-Nomos8k-span-otf-medium\n" : ""), ct);
-        await File.WriteAllTextAsync(Path.Combine(destination, "receipt.json"), JsonSerializer.Serialize(new AiReceipt(p.Sha256, extracted.ToArray())), ct);
     }
+
+    private static async Task ExtractTarGzipAsync(AiPackageArtifact artifact, string archive, string destination,
+        HashSet<string> required, List<AiInstalledFile> extracted, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(archive);
+        await using var gzip = new GZipStream(stream, CompressionMode.Decompress);
+        using var tar = new TarReader(gzip);
+        while (tar.GetNextEntry() is { } entry)
+        {
+            ct.ThrowIfCancellationRequested();
+            var entryName = NormalizePath(entry.Name);
+            _ = SafePath(destination, entryName);
+            if (!entryName.StartsWith(artifact.ArchiveRoot, StringComparison.Ordinal)) continue;
+            var relative = entryName[artifact.ArchiveRoot.Length..];
+            if (relative.Length == 0 || entry.EntryType == TarEntryType.Directory) continue;
+            if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile) || entry.DataStream is null)
+                throw new MediaException("Некорректный архив AI.");
+            var installedPath = NormalizePath(Path.Combine(artifact.DestinationDirectory, relative));
+            if (!required.Contains(installedPath)) continue;
+            await ExtractFileAsync(entry.DataStream, entry.Length, installedPath, destination, extracted, ct);
+        }
+    }
+
+    private static async Task ExtractFileAsync(Stream input, long length, string relative, string destination,
+        List<AiInstalledFile> extracted, CancellationToken ct)
+    {
+        if (length > 128L * 1024 * 1024 || extracted.Any(f => f.Path.Equals(relative, StringComparison.OrdinalIgnoreCase)))
+            throw new MediaException("Некорректный архив AI.");
+        var path = SafePath(destination, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await using (var output = File.Create(path)) await input.CopyToAsync(output, ct);
+        var extractedPath = SafePath(destination, relative);
+        await using var file = File.OpenRead(extractedPath);
+        if (file.Length != length) throw new MediaException("Некорректный архив AI.");
+        extracted.Add(new(relative, file.Length, Convert.ToHexString(await SHA256.HashDataAsync(file, ct))));
+    }
+    private static string NormalizePath(string path) => path.Replace('\\', '/');
     private Task CheckModelAsync(AiInstallation installation, CancellationToken ct) => installation.Package.Family == "rife"
         ? (rifeRunner ?? throw new InvalidOperationException("RIFE runner is not registered.")).CheckAsync(installation, ct)
         : runner.CheckAsync(installation, ct);

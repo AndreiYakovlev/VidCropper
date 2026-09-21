@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { upscaleSize, previewRange } from '../wwwroot/js/upscale.mjs';
+import { allowedScale, upscaleSize, previewRange } from '../wwwroot/js/upscale.mjs';
+import { clamp, splitPercent, zoomAroundPoint } from '../wwwroot/js/ai-comparison.mjs';
 
 test('AI output scale is independent of reduction; odd crop rounds down to even pixels', () => {
   assert.deepEqual(upscaleSize({width:101,height:57},3),{width:302,height:170});
@@ -14,6 +15,19 @@ test('preview stays inside trim and falls back at its end', () => {
   assert.deepEqual(previewRange({start:10,end:20},20),{start:17,end:20});
   assert.deepEqual(previewRange({start:10,end:11},11),{start:10,end:11});
 });
+test('upscaler model selects only a supported output scale', () => {
+  assert.equal(allowedScale({allowedScales:[2]}, 4), 2);
+  assert.equal(allowedScale({allowedScales:[2,3,4]}, 3), 3);
+  assert.equal(allowedScale(null, 4), 4);
+});
+test('AI comparison clamps its divider and keeps the zoom anchor stationary', () => {
+  assert.equal(splitPercent(150, 100, 200), 25);
+  assert.equal(splitPercent(50, 100, 200), 0);
+  assert.equal(splitPercent(400, 100, 200), 100);
+  assert.equal(splitPercent(100, 100, 0), 50);
+  assert.equal(clamp(5, 10, 20), 10);
+  assert.deepEqual(zoomAroundPoint({x:100,y:-40},{x:10,y:20},2,4),{x:-80,y:80});
+});
 
 const root = resolve(import.meta.dirname,'..');
 const headers = {'X-VidCropper':'1','Content-Type':'application/json'};
@@ -22,7 +36,7 @@ function ffmpeg(args) {
   assert.equal(r.status,0,r.stderr);
 }
 
-test('real GPU: five models, all scales, trim, preview, cancellation and exclusion',
+test('real GPU: eight models, allowed scales, trim, preview, cancellation and exclusion',
   {skip:process.env.VIDCROPPER_GPU_TESTS!=='1',timeout:600000}, async t => {
   const fixtures=join(root,'artifacts/ai-tests'); await mkdir(fixtures,{recursive:true});
   const sourcePath=join(fixtures,'source.mp4');
@@ -63,7 +77,11 @@ test('real GPU: five models, all scales, trim, preview, cancellation and exclusi
     const response=await fetch(`${url}/api/media/${uploadId}?name=ai-source.mp4`,{method:'PUT',headers:{'X-VidCropper':'1','Content-Type':'application/octet-stream'},body:await readFile(sourcePath)});
     assert.equal(response.status,200); media=await response.json();
     const request={mediaId:media.id,crop:{x:1,y:1,width:61,height:45},sourceWidth:64,sourceHeight:48,scale:10,fps:24,audio:true,quality:'balanced',startSeconds:0,endSeconds:1};
-    for(const modelId of ['nomos-weak','nomos-medium','nomos-strong','realesrgan','anime-video'])for(const scale of [2,3,4]){
+    const modelScales = {
+      'nomos-weak':[2,3,4], 'nomos-medium':[2,3,4], 'nomos-strong':[2,3,4], spankendata:[2,3,4],
+      realesrgan:[2,3,4], 'realesr-general-x4v3':[2,3,4], openproteus:[2], 'anime-video':[2,3,4],
+    };
+    for(const [modelId, scales] of Object.entries(modelScales))for(const scale of scales){
       await t.test(`${modelId} ×${scale}`,async()=>{
         const job=await finish(await api('/api/exports','POST',{...request,upscale:{modelId,scale}}));
         assert.equal(job.result.width,Math.floor(61*scale/2)*2);assert.equal(job.result.height,Math.floor(45*scale/2)*2);
