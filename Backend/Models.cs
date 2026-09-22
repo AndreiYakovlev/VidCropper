@@ -7,6 +7,8 @@ public sealed class MediaOptions
     // Zero selects half of the logical processors available to this process, at least one.
     public int PngThreads { get; set; } = 0;
     public long MaxUploadBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+    public int MaxPhotoSide { get; set; } = 32768;
+    public long MaxPhotoPixels { get; set; } = 100_000_000;
 }
 
 public sealed class MediaException(string message, int status = 400) : Exception(message)
@@ -16,6 +18,8 @@ public sealed class MediaException(string message, int status = 400) : Exception
 
 public sealed record VideoInfo(int Width, int Height, double Duration, double Fps,
     string Codec, long BitRate, bool HasAudio, int StreamIndex, long Size, string? FrameRate = null);
+public sealed record ImageInfo(int Width, int Height, string Format, long Size, bool HasAlpha);
+public sealed record ImageProbe(int Width, int Height, string Format, string PixelFormat, int StreamIndex);
 public sealed record CropRegion(int X, int Y, int Width, int Height);
 public sealed record ExportRequest(Guid MediaId, CropRegion? Crop, int Scale, int Fps,
     bool Audio, int SourceWidth, int SourceHeight, double? StartSeconds = null, double? EndSeconds = null,
@@ -29,6 +33,58 @@ public sealed record ExportSnapshot(Guid Id, string Status, double Progress, str
     VideoInfo? Result, string FileName, string? Stage = null, long FramesDone = 0, long FramesTotal = 0, bool Preview = false,
     string? StageId = null, double? StageProgress = null, bool FramesTotalEstimated = false,
     double ElapsedSeconds = 0, double StageElapsedSeconds = 0, double? RemainingSeconds = null);
+
+public sealed record PhotoExportRequest(Guid MediaId, CropRegion? Crop, int Scale,
+    int SourceWidth, int SourceHeight, string Format, int? Quality = null, UpscaleRequest? Upscale = null);
+public sealed record PhotoPreviewRequest(PhotoExportRequest Export);
+public sealed record PhotoExportSnapshot(Guid Id, string Status, double Progress, string? Error,
+    ImageInfo? Result, string FileName, string ContentType, bool Preview = false,
+    string? Stage = null, string? StageId = null, double? StageProgress = null,
+    double ElapsedSeconds = 0, double StageElapsedSeconds = 0, double? RemainingSeconds = null);
+
+public static class PhotoExportSettings
+{
+    public static (int Width, int Height, string Extension, string ContentType) Validate(
+        PhotoExportRequest request, ImageInfo source, int maxSide, long maxPixels)
+    {
+        if (request.SourceWidth != source.Width || request.SourceHeight != source.Height)
+            throw new MediaException("Размеры предпросмотра отличаются от исходника. Экспорт остановлен, чтобы не сместить рамку.");
+        var crop = request.Crop;
+        if (crop is null || crop.X < 0 || crop.Y < 0 || crop.Width < 1 || crop.Height < 1 ||
+            (long)crop.X + crop.Width > source.Width || (long)crop.Y + crop.Height > source.Height)
+            throw new MediaException("Область кадрирования выходит за границы фото.");
+        if (request.Scale is < 1 or > 100) throw new MediaException("Недопустимый масштаб фото.");
+        var output = request.Format?.ToLowerInvariant() switch
+        {
+            "png" => (".png", "image/png"),
+            "jpeg" or "jpg" => (".jpg", "image/jpeg"),
+            "webp" => (".webp", "image/webp"),
+            _ => throw new MediaException("Поддерживаются результаты PNG, JPEG и WebP.")
+        };
+        if (output.Item1 != ".png" && request.Quality is not (>= 1 and <= 100))
+            throw new MediaException("Качество JPEG/WebP должно быть от 1 до 100.");
+        if (output.Item1 == ".png" && request.Quality is not null)
+            throw new MediaException("Для PNG качество не задаётся.");
+
+        int width, height;
+        if (request.Upscale is { } upscale)
+        {
+            var model = AiCatalog.Validate(upscale);
+            width = checked(crop.Width * upscale.Scale);
+            height = checked(crop.Height * upscale.Scale);
+            if ((long)crop.Width * model.NativeScale > maxSide || (long)crop.Height * model.NativeScale > maxSide)
+                throw new MediaException($"Фото слишком велико для AI: промежуточный результат не должен превышать {maxSide} пикселей по стороне.");
+        }
+        else
+        {
+            width = Math.Max(1, (int)Math.Round(crop.Width * request.Scale / 100d, MidpointRounding.AwayFromZero));
+            height = Math.Max(1, (int)Math.Round(crop.Height * request.Scale / 100d, MidpointRounding.AwayFromZero));
+        }
+        if (width > maxSide || height > maxSide || (long)width * height > maxPixels)
+            throw new MediaException("Итоговое фото превышает безопасный лимит размера.");
+        return (width, height, output.Item1, output.Item2);
+    }
+}
 
 public static class ExportSettings
 {

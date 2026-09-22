@@ -132,6 +132,49 @@ public sealed class MediaTools(MediaOptions options, ILogger<MediaTools> logger)
             (int)GetNumber(video, "index"), new FileInfo(path).Length, rate?.ToString());
     }
 
+    public async Task<ImageProbe> ProbeImageAsync(string path, int maxSide, long maxPixels,
+        bool requireSingleFrame, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        string json;
+        try
+        {
+            json = await RunAsync(true,
+                ["-v", "error", "-select_streams", "v:0", "-show_entries",
+                 "stream=index,codec_name,width,height,pix_fmt", "-of", "json", path], null, timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        { throw new MediaException("Чтение фото заняло слишком много времени.", 422); }
+        using var document = JsonDocument.Parse(json);
+        var streams = document.RootElement.GetProperty("streams").EnumerateArray().ToArray();
+        if (streams.Length != 1) throw new MediaException("В файле нет поддерживаемого изображения.");
+        var stream = streams[0];
+        var codec = GetString(stream, "codec_name").ToLowerInvariant();
+        var format = codec switch
+        {
+            "mjpeg" or "jpeg" => "jpeg",
+            "png" => "png",
+            "webp" => "webp",
+            _ => throw new MediaException("Поддерживаются только статические JPG, PNG и WebP.")
+        };
+        var width = (int)GetNumber(stream, "width");
+        var height = (int)GetNumber(stream, "height");
+        if (width < 1 || height < 1 || width > maxSide || height > maxSide || (long)width * height > maxPixels)
+            throw new MediaException($"Фото превышает безопасный лимит: до {maxSide} пикселей по стороне и {maxPixels:N0} пикселей всего.");
+        if (requireSingleFrame)
+        {
+            var countJson = await RunAsync(true,
+                ["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries",
+                 "stream=nb_read_frames", "-of", "json", path], null, timeout.Token);
+            using var countDocument = JsonDocument.Parse(countJson);
+            var counted = countDocument.RootElement.GetProperty("streams").EnumerateArray().FirstOrDefault();
+            if (counted.ValueKind == JsonValueKind.Undefined || GetNumber(counted, "nb_read_frames") != 1)
+                throw new MediaException("Анимированные изображения не поддерживаются. Выберите статический JPG, PNG или WebP.");
+        }
+        return new(width, height, format, GetString(stream, "pix_fmt"), (int)GetNumber(stream, "index"));
+    }
+
     private static string GetString(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) ? value.ToString() : "";
     private static double GetNumber(JsonElement element, string name) =>

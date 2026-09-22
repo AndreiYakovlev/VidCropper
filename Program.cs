@@ -16,6 +16,8 @@ if (!int.TryParse(portValue, out var port) || port is < 0 or > 65535)
 var mediaOptions = builder.Configuration.GetSection("Media").Get<MediaOptions>() ?? new();
 if (mediaOptions.MaxUploadBytes < 1) { Console.Error.WriteLine("Media:MaxUploadBytes должен быть положительным."); return 1; }
 if (mediaOptions.PngThreads < 0) { Console.Error.WriteLine("Media:PngThreads должен быть 0 (автоматически) или положительным числом потоков."); return 1; }
+if (mediaOptions.MaxPhotoSide < 1 || mediaOptions.MaxPhotoPixels < 1)
+{ Console.Error.WriteLine("Media:MaxPhotoSide и Media:MaxPhotoPixels должны быть положительными."); return 1; }
 if (builder.Configuration.GetValue<bool>("InstallTools"))
 {
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(10));
@@ -38,6 +40,7 @@ builder.WebHost.UseKestrel(options =>
 builder.Services.AddSingleton(mediaOptions);
 builder.Services.AddSingleton<MediaTools>();
 builder.Services.AddSingleton<MediaStore>();
+builder.Services.AddSingleton<PhotoStore>();
 builder.Services.AddSingleton<ProcessingGate>();
 builder.Services.AddSingleton(new AiCatalog());
 builder.Services.AddSingleton<AiRunner>();
@@ -47,11 +50,13 @@ builder.Services.AddSingleton<AiPipeline>();
 builder.Services.AddSingleton<FrameWorkspace>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<AiPackages>());
 builder.Services.AddSingleton<ExportService>();
+builder.Services.AddSingleton<PhotoExportService>();
 builder.Services.AddSingleton<ExportArchive>();
 builder.Services.AddSingleton<DownloadTools>();
 builder.Services.AddSingleton<LinkDownloadService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LinkDownloadService>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ExportService>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<PhotoExportService>());
 var app = builder.Build();
 app.Use(async (context, next) =>
 {

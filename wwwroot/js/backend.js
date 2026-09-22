@@ -32,7 +32,7 @@ export function setupBackend() {
   }
   function render() {
     const busy = starting || (job && !terminal(job.status));
-    $('export').disabled = state.busyAi || state.busyPreview || !aiReady(state) || stopped || state.busyDownload || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
+    $('export').disabled = state.busyAi || state.busyPreview || state.busyPhotoExport || state.busyPhotoPreview || !aiReady(state) || stopped || state.busyDownload || !state.ready || !config || Boolean(config.error) || busy || preparing || Boolean(uploading);
     $('export').textContent = uploading ? 'Подготовка видео…' : busy ? 'Экспорт выполняется…' : 'Экспортировать видео ↗';
     $('cancel').disabled = stopped || (!uploading && !busy) || cancelRequested;
     $('export-status').textContent = status.text;

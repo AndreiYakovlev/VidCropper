@@ -87,6 +87,30 @@ public static class Api
             catch { store.TryDelete(path); throw; }
         });
         app.MapDelete("/api/media/{id:guid}", (Guid id, MediaStore store) => { store.Delete(id); return Results.NoContent(); });
+        app.MapPut("/api/photos/{id:guid}", async (Guid id, HttpRequest request, PhotoStore store,
+            MediaTools tools, IHostApplicationLifetime lifetime) =>
+        {
+            if (request.ContentType != "application/octet-stream") throw new MediaException("Ожидается файл фото.", 415);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                request.HttpContext.RequestAborted, lifetime.ApplicationStopping);
+            var source = await store.ImportAsync(id, request.Body, request.Query["name"].ToString(),
+                request.ContentLength, options, tools, linked.Token);
+            return Results.Ok(new { id, info = source.Info });
+        });
+        app.MapGet("/api/photos/{id:guid}/preview", (Guid id, PhotoStore store, HttpContext context) =>
+        {
+            var lease = store.Acquire(id);
+            try
+            {
+                var stream = new FileStream(lease.Source.Path, FileMode.Open, FileAccess.Read,
+                    FileShare.Read | FileShare.Delete);
+                context.Response.RegisterForDispose(lease);
+                return Results.File(stream, "image/png");
+            }
+            catch { lease.Dispose(); throw; }
+        });
+        app.MapDelete("/api/photos/{id:guid}", (Guid id, PhotoStore store) =>
+        { store.Delete(id); return Results.NoContent(); });
         app.MapPost("/api/exports", (ExportRequest request, ExportService service) => Results.Ok(service.Start(request)));
         app.MapGet("/api/exports/{id:guid}", (Guid id, ExportService service) => service.Get(id));
         app.MapPost("/api/exports/{id:guid}/cancel", async (Guid id, ExportService service) => Results.Ok(await service.CancelAsync(id)));
@@ -104,6 +128,42 @@ public static class Api
             while (true)
             {
                 await context.Response.WriteAsync($"data: {JsonSerializer.Serialize(snapshot, JsonOptions)}\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+                if (snapshot.Status is "completed" or "failed" or "cancelled") break;
+                await Task.Delay(300, context.RequestAborted);
+                snapshot = service.Get(id);
+            }
+        });
+        app.MapPost("/api/photo-exports", (PhotoExportRequest request, PhotoExportService service) =>
+            Results.Ok(service.Start(request)));
+        app.MapPost("/api/ai/photo-previews", (PhotoPreviewRequest request, PhotoExportService service) =>
+            Results.Ok(service.Start(request.Export ?? throw new MediaException("Не указаны настройки сравнения."), true)));
+        app.MapGet("/api/photo-exports/{id:guid}", (Guid id, PhotoExportService service) => service.Get(id));
+        app.MapPost("/api/photo-exports/{id:guid}/cancel", async (Guid id, PhotoExportService service) =>
+            Results.Ok(await service.CancelAsync(id)));
+        app.MapDelete("/api/photo-exports/{id:guid}", async (Guid id, PhotoExportService service) =>
+        { await service.DeleteAsync(id); return Results.NoContent(); });
+        app.MapGet("/api/photo-exports/{id:guid}/download", (Guid id, PhotoExportService service) =>
+        {
+            var result = service.OpenResult(id);
+            return Results.File(result.Stream, result.ContentType, result.Name);
+        });
+        app.MapGet("/api/ai/photo-previews/{id:guid}/{variant}",
+            (Guid id, string variant, PhotoExportService service) =>
+            {
+                var result = service.OpenResult(id, variant);
+                return Results.File(result.Stream, result.ContentType);
+            });
+        app.MapGet("/api/photo-exports/{id:guid}/events", async (Guid id, PhotoExportService service,
+            HttpContext context) =>
+        {
+            var snapshot = service.Get(id);
+            context.Response.ContentType = "text/event-stream";
+            context.Response.Headers.CacheControl = "no-cache";
+            while (true)
+            {
+                await context.Response.WriteAsync($"data: {JsonSerializer.Serialize(snapshot, JsonOptions)}\n\n",
+                    context.RequestAborted);
                 await context.Response.Body.FlushAsync(context.RequestAborted);
                 if (snapshot.Status is "completed" or "failed" or "cancelled") break;
                 await Task.Delay(300, context.RequestAborted);

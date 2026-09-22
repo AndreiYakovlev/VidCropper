@@ -21,9 +21,11 @@ public sealed class ExportArchive(IWebHostEnvironment environment)
             if (System.Text.RegularExpressions.Regex.IsMatch(stem.Split('.')[0].TrimEnd(),
                 @"^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 stem = "_" + stem;
+            var extension = Path.GetExtension(name).ToLowerInvariant();
+            if (extension is not (".mp4" or ".png" or ".jpg" or ".webp")) extension = ".mp4";
             for (var suffix = 0; ; suffix++)
             {
-                var destination = Path.Combine(Root, stem + (suffix == 0 ? "" : $" ({suffix})") + ".mp4");
+                var destination = Path.Combine(Root, stem + (suffix == 0 ? "" : $" ({suffix})") + extension);
                 try { File.Move(staging, destination, overwrite: false); return destination; }
                 catch (IOException) when (File.Exists(destination) || Directory.Exists(destination)) { }
             }

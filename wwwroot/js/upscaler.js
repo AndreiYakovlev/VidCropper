@@ -35,7 +35,7 @@ export function setupUpscaler(video) {
       $('ai-size').textContent = `${crop.width} × ${crop.height} → ${size.width} × ${size.height} px`;
     } else $('ai-size').textContent = 'Выберите видео';
     $('rife-fps').textContent = state.sourceFps ? `${fpsLabel(state.sourceFps)} → ${fpsLabel(outputFps({ ...state, rifeEnabled: true }))} FPS · длительность сохраняется` : 'Ожидание метаданных видео';
-    const unavailable = !state.ready || !state.mediaId || !aiReady(state) || state.busyDownload || state.busyExport || state.busyAi || closing;
+    const unavailable = !state.ready || !state.mediaId || !aiReady(state) || state.busyDownload || state.busyExport || state.busyPhotoExport || state.busyPhotoPreview || state.busyAi || closing;
     $('ai-preview').disabled = unavailable || !state.aiEnabled;
     $('rife-preview').disabled = unavailable || !state.rifeEnabled;
     if (previewSignature && previewSignature !== signature()) $('ai-preview-stale').hidden = false;
@@ -138,7 +138,7 @@ export function setupUpscaler(video) {
   $("ai-preview").addEventListener("click", () => void startPreview());
   $("rife-preview").addEventListener("click", () => void startPreview());
   async function startPreview() {
-    if (state.busyExport || state.busyAi || !state.mediaId || !aiReady(state) || closing) return;
+    if (state.busyExport || state.busyPhotoExport || state.busyPhotoPreview || state.busyAi || !state.mediaId || !aiReady(state) || closing) return;
     const version = ++generation;
     const request = exportRequest();
     previewSignature = signature();

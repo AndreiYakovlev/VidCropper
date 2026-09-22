@@ -264,6 +264,45 @@ try
         await exports.DeleteAsync(job.Id);
         await exports.StopAsync(default);
     }
+    using (var photoStore = new PhotoStore(NullLogger<PhotoStore>.Instance))
+    using (var photoExports = new PhotoExportService(photoStore, tools,
+        new MediaOptions { MaxPhotoSide = 32768, MaxPhotoPixels = 100_000_000 },
+        NullLogger<PhotoExportService>.Instance, lifetime, gate, packages, runner, new ExportArchive(env)))
+    {
+        var photoPath = Path.Combine(root, "photo-source.png");
+        await tools.RunAsync(false,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=red@0.5:size=64x48,format=rgba","-frames:v","1",photoPath],null,default);
+        var photoId = Guid.NewGuid();
+        await using (var stream = File.OpenRead(photoPath))
+            await photoStore.ImportAsync(photoId, stream, "photo.png", stream.Length,
+                new MediaOptions { MaxPhotoSide = 32768, MaxPhotoPixels = 100_000_000 }, tools, default);
+        var photoRequest = new PhotoExportRequest(photoId, new(1, 1, 61, 45), 100, 64, 48,
+            "png", null, new("nomos-weak", 3));
+        var photoJob = photoExports.Start(photoRequest);
+        while (photoExports.Get(photoJob.Id).Status is "queued" or "running" or "finalizing") await Task.Delay(10);
+        var photoDone = photoExports.Get(photoJob.Id);
+        Check(photoDone.Status == "completed" && photoDone.Result?.Width == 183 && photoDone.Result.Height == 135 && photoDone.Result.HasAlpha,
+            "photo AI crops first, multiplies odd dimensions exactly and preserves alpha");
+        await photoExports.DeleteAsync(photoJob.Id);
+
+        photoJob = photoExports.Start(photoRequest, true);
+        while (photoExports.Get(photoJob.Id).Status is "queued" or "running" or "finalizing") await Task.Delay(10);
+        using (var beforePhoto = photoExports.OpenResult(photoJob.Id, "before").Stream)
+        using (var afterPhoto = photoExports.OpenResult(photoJob.Id, "after").Stream)
+            Check(photoExports.Get(photoJob.Id).Status == "completed" && beforePhoto.Length > 0 && afterPhoto.Length > 0,
+                "photo AI preview exposes before and after images");
+        await photoExports.DeleteAsync(photoJob.Id);
+
+        runner.Hold = true; runner.Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        photoJob = photoExports.Start(photoRequest);
+        await runner.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        bool secondRejected = false;
+        try { photoExports.Start(photoRequest); } catch (MediaException e) { secondRejected = e.Status == 409; }
+        Check(secondRejected && gate.Busy, "photo AI owns the shared processing gate");
+        Check((await photoExports.CancelAsync(photoJob.Id)).Status == "cancelled", "photo AI cancellation stops inference");
+        runner.Hold = false;
+        await photoExports.DeleteAsync(photoJob.Id);
+        await photoExports.StopAsync(default);
+    }
     var png = Path.Combine(root,"frame.png");
     await tools.RunAsync(false,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=red:size=8x8","-frames:v","1",png],null,default);
     var data=await File.ReadAllBytesAsync(png);
@@ -292,6 +331,16 @@ sealed class TestRunner : AiRunner
     public override async Task RunAsync(AiInstallation installation,string input,string output,int scale,CancellationToken ct, Action<string>? completed = null)
     {
         Batches++;
+        if (File.Exists(input))
+        {
+            Started.TrySetResult();
+            if(Hold)await Task.Delay(Timeout.Infinite,ct);
+            if(MissingFrames)return;
+            await tools.RunAsync(false,["-hide_banner","-loglevel","error","-y","-i",input,"-vf",$"scale=iw*{scale}:ih*{scale}:flags=neighbor","-frames:v","1",output],null,ct);
+            completed?.Invoke(Path.GetFileName(output));
+            if(Corrupt) await File.WriteAllBytesAsync(output,[1,2,3],ct);
+            return;
+        }
         var files = Directory.GetFiles(input).Order().ToArray(); InputCount=files.Length;
         ContinuousNames = files.Select(Path.GetFileName).SequenceEqual(Enumerable.Range(1,files.Length).Select(i=>$"{i:D8}.png"));
         Started.TrySetResult();

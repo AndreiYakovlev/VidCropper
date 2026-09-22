@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>VidCropper — локальный видеоредактор</title>
+    <title>VidCropper — локальный редактор видео и фото</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -18,6 +18,12 @@
           transform="translate(1 0)"
         />
       </symbol>
+      <symbol id="video-icon" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="14" height="14" rx="2" /><path d="m17 10 4-2v8l-4-2" />
+      </symbol>
+      <symbol id="photo-icon" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m4 17 5-5 3 3 2-2 6 5" />
+      </symbol>
     </svg>
     <header>
       <a class="brand" href="/">
@@ -29,14 +35,18 @@
       </a>
       <div class="header-right">
         <span class="local-dot"></span>
-        <span>Видео остаётся на вашем компьютере</span>
-        <button class="button secondary" id="open-top">
+        <span>Файлы остаются на вашем компьютере</span>
+        <button class="button secondary mode-video-only" id="open-top">
           <svg><use href="#upload-icon" /></svg>
           Открыть видео
         </button>
-        <button class="button secondary" id="open-link-top" type="button">
+        <button class="button secondary mode-video-only" id="open-link-top" type="button">
           <svg aria-hidden="true"><use href="#link-icon" /></svg>
           Открыть видео по ссылке
+        </button>
+        <button class="button secondary mode-photo-only" id="photo-open-top" hidden>
+          <svg><use href="#upload-icon" /></svg>
+          Открыть фото
         </button>
         <button
           class="text-button"
@@ -47,7 +57,17 @@
         </button>
       </div>
     </header>
-    <main>
+    <div class="app-shell">
+      <nav class="media-tabs" role="tablist" aria-label="Режим редактора" aria-orientation="vertical">
+        <button id="video-tab" class="media-tab active" type="button" role="tab" aria-selected="true" aria-controls="video-panel" tabindex="0">
+          <svg aria-hidden="true"><use href="#video-icon" /></svg><span>Видео</span><i class="tab-activity" hidden></i>
+        </button>
+        <button id="photo-tab" class="media-tab" type="button" role="tab" aria-selected="false" aria-controls="photo-panel" tabindex="-1">
+          <svg aria-hidden="true"><use href="#photo-icon" /></svg><span>Фото</span><i class="tab-activity" hidden></i>
+        </button>
+      </nav>
+      <div class="app-panels">
+    <main id="video-panel" role="tabpanel" aria-labelledby="video-tab">
       <div class="page-heading">
         <div>
           <div class="eyebrow">ВАШ КАДР. ВАШ ФОРМАТ.</div>
@@ -507,8 +527,68 @@
         <span>Локально. Приватно. Без лишнего.</span>
       </footer>
     </main>
+    <main id="photo-panel" role="tabpanel" aria-labelledby="photo-tab" hidden>
+      <div class="page-heading">
+        <div><div class="eyebrow">ВАШ КАДР. ВАШ ФОРМАТ.</div><h1>Обработайте фото.</h1>
+          <p>Выберите область, настройте размер и при необходимости увеличьте изображение.</p></div>
+        <span class="stage-badge">02 <span>/</span> Фото</span>
+      </div>
+      <div class="workspace">
+        <section class="editor-column" aria-label="Предпросмотр фото">
+          <div class="panel preview-panel">
+            <div class="panel-toolbar"><div class="toolbar-title"><span class="status-dot"></span>Предпросмотр</div>
+              <div class="segmented"><button id="photo-source-view" class="active" aria-pressed="true" disabled>Исходник</button><button id="photo-crop-view" aria-pressed="false" disabled>Кроп</button></div></div>
+            <div id="photo-stage" class="stage">
+              <div id="photo-empty" class="empty">
+                <div class="upload-art"><svg><use href="#photo-icon" /></svg><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span></div>
+                <h2>Перетащите или вставьте фото</h2><p>JPG, PNG или WebP · Ctrl+V поддерживается</p>
+                <button id="photo-open-empty" class="button primary">Выбрать фото <span>↗</span></button>
+                <small>Локальная обработка · без загрузки в интернет</small>
+              </div>
+              <div id="photo-surface" hidden><img id="photo-image" alt="Открытое фото" />
+                <div id="photo-crop-overlay" class="crop-overlay"><div id="photo-crop-frame" class="crop-frame" tabindex="0" role="group" aria-label="Область кадрирования фото. Стрелки перемещают рамку, Shift увеличивает шаг.">
+                  <div class="thirds"></div><span id="photo-frame-label" class="frame-label"></span>
+                  <i data-handle="nw"></i><i data-handle="n"></i><i data-handle="ne"></i><i data-handle="e"></i><i data-handle="se"></i><i data-handle="s"></i><i data-handle="sw"></i><i data-handle="w"></i>
+                </div></div>
+              </div>
+              <canvas id="photo-crop-canvas" hidden aria-label="Обрезанный предпросмотр фото"></canvas>
+            </div>
+            <div id="photo-error" class="error" role="alert" hidden></div>
+            <div class="preview-footnote"><span>↔ Перемещайте рамку и тяните за её края</span><span>Метаданные удаляются при экспорте</span></div>
+          </div>
+          <section class="panel source-info">
+            <div class="section-title"><h2>Исходное фото</h2><span id="photo-file-badge">Файл не выбран</span></div>
+            <div id="photo-filename" class="filename">Здесь появится информация о фото</div>
+            <div class="metadata"><div><span>Разрешение</span><strong id="photo-source-size">—</strong></div><div><span>Формат</span><strong id="photo-source-format">—</strong></div><div><span>Размер файла</span><strong id="photo-file-size">—</strong></div><div><span>Прозрачность</span><strong id="photo-source-alpha">—</strong></div></div>
+            <p id="photo-source-note" class="meta-note">Выберите, перетащите или вставьте фото.</p>
+          </section>
+          <section class="panel result">
+            <div class="section-title"><h2>Результат</h2><span id="photo-format-badge" class="format-badge">PNG</span></div>
+            <dl><div><dt>Область</dt><dd id="photo-summary-crop">—</dd></div><div><dt>Масштаб</dt><dd id="photo-summary-scale">100%</dd></div><div id="photo-summary-ai-row" hidden><dt>Upscaler</dt><dd id="photo-summary-ai">—</dd></div><div><dt>Разрешение</dt><dd id="photo-summary-size">—</dd></div><div><dt>Формат</dt><dd id="photo-summary-format">PNG</dd></div><div><dt>Метаданные</dt><dd>Удаляются</dd></div></dl>
+            <div class="export-actions"><div class="export-action-row"><button id="photo-export" class="button primary export" disabled>Экспортировать фото <span>↗</span></button><button id="photo-cancel" class="cancel" disabled>Отмена</button></div>
+              <progress id="photo-export-progress" max="100" hidden aria-label="Прогресс обработки фото"></progress><p id="photo-export-status" class="export-note" role="status">Выберите фото для начала работы.</p><p id="photo-result-details" hidden></p><p id="photo-export-timing" class="processing-timing"></p><a id="photo-download" class="button secondary" hidden>Скачать фото ↓</a></div>
+          </section>
+        </section>
+        <aside class="panel settings">
+          <div class="settings-heading"><h2>Настройки фото</h2><svg><use href="#crop-icon" /></svg></div>
+          <fieldset id="photo-crop-settings" disabled><div class="label-row"><legend>Пропорции</legend><button type="button" id="photo-reset" class="text-button">Сбросить</button></div><div id="photo-presets" class="presets"></div><div class="label-row precision-heading"><span>Область кадрирования</span><span class="unit">PX</span></div>
+            <div class="coordinates"><label>X<input id="photo-crop-x" type="number" min="0" step="1" /></label><label>Y<input id="photo-crop-y" type="number" min="0" step="1" /></label><label>Ширина<input id="photo-crop-width" type="number" min="1" step="1" /></label><label>Высота<input id="photo-crop-height" type="number" min="1" step="1" /></label></div></fieldset>
+          <section class="settings-section"><div class="label-row"><label for="photo-scale">Размер результата</label><div class="percent-input"><input id="photo-scale-number" type="number" value="100" min="1" max="100" aria-label="Процент уменьшения фото" />%</div></div><input id="photo-scale" type="range" min="1" max="100" value="100" aria-label="Масштаб фото" /><div class="range-labels"><span>1%</span><span>От crop</span><span>100%</span></div><p id="photo-scale-ai-note" class="meta-note" hidden>Размер задаётся в секции Upscaler.</p><div class="output-size"><span>Итоговое разрешение</span><strong id="photo-output-size">— × — <small>px</small></strong></div></section>
+          <section class="settings-section upscaler" aria-labelledby="photo-upscaler-title"><h2 id="photo-upscaler-title">Upscaler</h2><label class="sound-row" for="photo-ai-enabled"><span>Включить AI-увеличение</span><input id="photo-ai-enabled" type="checkbox" /></label>
+            <fieldset id="photo-ai-fields" disabled><label for="photo-ai-model">Модель</label><select id="photo-ai-model" aria-describedby="photo-ai-description"><option value="nomos-weak">Nomos8k SPAN Weak</option></select><p id="photo-ai-description" class="meta-note">Получение каталога…</p><label for="photo-ai-scale">Итоговый масштаб</label><select id="photo-ai-scale"><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select><p id="photo-ai-size" class="meta-note">Выберите фото</p><p id="photo-ai-native-note" class="meta-note"></p><p id="photo-ai-package-status" class="meta-note" role="status">Получение каталога…</p>
+              <div class="ai-actions"><button id="photo-ai-install" class="button secondary" type="button">Скачать необходимые компоненты</button><button id="photo-ai-rollback" class="text-button" type="button" hidden>Вернуться к предыдущей версии</button><button id="photo-ai-check" class="text-button" type="button" hidden>Проверить GPU / файлы</button><button id="photo-ai-preview" class="button secondary" type="button" disabled>Сравнить до / после</button></div></fieldset>
+            <progress id="photo-ai-progress" max="100" hidden aria-label="Установка AI-модуля"></progress><p id="photo-ai-operation-status" class="meta-note" role="status"></p><button id="photo-ai-retry-catalog" class="text-button" type="button" hidden>Повторить загрузку каталога</button><button id="photo-ai-cancel" class="text-button" type="button" hidden>Отменить установку / проверку</button>
+          </section>
+          <section class="settings-section"><div class="label-row"><label for="photo-format">Формат результата</label><select id="photo-format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></div><div id="photo-quality-row" class="photo-quality" hidden><div class="label-row"><label for="photo-quality">Качество</label><output id="photo-quality-value" for="photo-quality">92</output></div><input id="photo-quality" type="range" min="1" max="100" value="92" /></div><p id="photo-alpha-warning" class="meta-note warning-note" hidden>JPEG не поддерживает прозрачность. Прозрачные области станут белыми.</p><p class="meta-note">EXIF, GPS и другие метаданные не переносятся в результат.</p></section>
+        </aside>
+      </div>
+      <footer><span>VIDCROPPER <span class="footer-separator">/</span> Точный кадр для фото.</span><span>Локально. Приватно. Без лишнего.</span></footer>
+    </main>
+      </div>
+    </div>
     <input type="file" id="file-input" accept="video/*,.mkv,.avi,.mov,.webm,.mp4,.m4v" hidden />
-    <div id="drop-indicator" hidden>Отпустите файл, чтобы открыть видео</div>
+    <input type="file" id="photo-file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden />
+    <div id="drop-indicator" hidden>Отпустите файл, чтобы открыть</div>
     <dialog id="ai-preview-dialog" class="ai-preview-dialog" aria-labelledby="ai-preview-title">
       <div class="section-title">
         <h2 id="ai-preview-title">Проба AI — до / после</h2>
@@ -596,6 +676,19 @@
           aria-label="Позиция пробы"
         />
       </div>
+    </dialog>
+    <dialog id="photo-ai-preview-dialog" class="ai-preview-dialog" aria-labelledby="photo-ai-preview-title">
+      <div class="section-title"><h2 id="photo-ai-preview-title">Фото до / после AI</h2><button id="photo-ai-preview-close" class="text-button" type="button" aria-label="Закрыть сравнение">×</button></div>
+      <div class="ai-preview-operation"><div class="ai-preview-operation-copy"><p id="photo-ai-preview-status" role="status">Подготовка…</p><p id="photo-ai-preview-timing" class="processing-timing"></p></div><progress id="photo-ai-preview-progress" max="100"></progress><div class="ai-preview-job-actions"><button id="photo-ai-preview-cancel" class="button secondary" type="button">Отменить</button><button id="photo-ai-preview-retry" class="button secondary" type="button" hidden>Повторить</button></div></div>
+      <div class="ai-view-toolbar"><div class="ai-view-group"><button id="photo-ai-mode-split" class="text-button" type="button" aria-pressed="true">Разделитель</button><button id="photo-ai-mode-toggle" class="text-button" type="button" aria-pressed="false">Переключение</button><button id="photo-ai-mode-side" class="text-button" type="button" aria-pressed="false">Рядом</button></div><div class="ai-view-group"><button id="photo-ai-zoom-fit" class="text-button" type="button" aria-pressed="true">Вписать</button><button id="photo-ai-zoom-100" class="text-button" type="button" aria-pressed="false">100%</button><button id="photo-ai-zoom-200" class="text-button" type="button" aria-pressed="false">200%</button><button id="photo-ai-zoom-400" class="text-button" type="button" aria-pressed="false">400%</button></div></div>
+      <button id="photo-ai-hold-before" class="ai-hold-before" type="button" disabled>Удерживайте, чтобы увидеть «До»</button>
+      <p id="photo-ai-view-hint" class="ai-view-hint">Колесо — масштаб, перетаскивание — панорама.</p>
+      <div id="photo-ai-comparison" class="ai-comparison mode-split photo-comparison"><div id="photo-ai-comparison-viewport" class="ai-comparison-viewport" tabindex="0" aria-label="Сравнение фото до и после AI">
+        <div id="photo-ai-before-pane" class="ai-video-pane ai-before-pane"><img id="photo-ai-before" alt="Фото до AI" /><span class="ai-pane-label">До</span></div>
+        <div id="photo-ai-after-clip" class="ai-video-pane ai-after-pane"><img id="photo-ai-after" alt="Фото после AI" /><span class="ai-pane-label">После</span></div>
+        <div id="photo-ai-compare-divider" class="ai-compare-divider" role="slider" tabindex="0" aria-label="Граница сравнения" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span>↔</span></div>
+      </div></div>
+      <div class="ai-preview-job-actions"><button id="photo-ai-preview-dismiss" class="button primary" type="button">Закрыть</button></div>
     </dialog>
     <script type="module" src="js/app.js"></script>
     <dialog

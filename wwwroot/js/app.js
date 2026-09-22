@@ -5,12 +5,25 @@ import { setupSettings } from './settings.js';
 import { setupBackend } from './backend.js';
 import { setupTrim } from './trim-control.js';
 import { setupLinkDialog } from './link-dialog.js';
+import { setupTabs } from './tabs.js';
+import { setupMediaInput } from './media-input.js';
+import { setupPhotoSource } from './photo-source.js';
+import { setupPhotoCrop } from './photo-crop.js';
+import { setupPhotoSettings } from './photo-settings.js';
+import { setupPhotoBackend } from './photo-backend.js';
+import { setupPhotoUpscaler } from './photo-upscaler.js';
 
-const { video, openRemote } = setupPlayer();
+setupTabs();
+const { video, openFile, openRemote } = setupPlayer();
+const { image, openPhoto } = setupPhotoSource();
+setupMediaInput(openFile, openPhoto);
 setupTrim(video);
 setupCrop(video);
 setupSettings();
 setupBackend();
 setupLinkDialog(openRemote);
-
 setupUpscaler(video);
+setupPhotoCrop(image);
+setupPhotoSettings();
+setupPhotoBackend();
+setupPhotoUpscaler();

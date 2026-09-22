@@ -9,7 +9,7 @@ export function formatTime(value) {
 }
 
 export function setupPlayer() {
-  const video = document.querySelector('#video'), input = document.querySelector('#file-input');
+  const video = document.querySelector('#video');
   const seek = document.querySelector('#seek'), play = document.querySelector('#play');
   const error = document.querySelector('#error');
   let objectUrl = null, generation = 0;
@@ -81,27 +81,6 @@ export function setupPlayer() {
     video.onerror = () => { if (version === generation) fail(); };
     video.src = remoteMedia ? `/api/media/${remoteMedia.id}/preview` : objectUrl;
   }
-  for (const id of ['open-top', 'open-empty']) document.getElementById(id).addEventListener('click', () => input.click());
-  input.addEventListener('change', () => { open(input.files[0]); input.value = ''; });
-  let dragDepth = 0;
-  const indicator = document.querySelector('#drop-indicator');
-  document.addEventListener('dragenter', event => {
-    if (document.querySelector('dialog[open]')) { event.preventDefault(); return; }
-    if (!event.dataTransfer.types.includes('Files')) return;
-    event.preventDefault(); dragDepth++; indicator.hidden = false;
-  });
-  document.addEventListener('dragover', event => {
-    if (!event.dataTransfer.types.includes('Files')) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = document.querySelector('dialog[open]') ? 'none' : 'copy';
-  });
-  document.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) indicator.hidden = true; });
-  document.addEventListener('drop', event => {
-    event.preventDefault(); dragDepth = 0; indicator.hidden = true;
-    if (document.querySelector('dialog[open]')) return;
-    if (event.dataTransfer.files.length > 1) { showError('Выберите одно видео за раз. Текущее видео не изменено.'); return; }
-    open(event.dataTransfer.files[0]);
-  });
   play.addEventListener('click', async () => {
     if (!video.paused) { video.pause(); return; }
     if (reachedEnd || video.ended || video.currentTime < state.trim.start || video.currentTime >= endPreviewTime(state.trim))
@@ -129,5 +108,6 @@ export function setupPlayer() {
     event.target.setAttribute('aria-pressed', String(!video.muted));
   });
   window.addEventListener('pagehide', () => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
-  return { video, openRemote: source => open({ name: source.name, size: source.info.size }, source) };
+  return { video, openFile: file => open(file),
+    openRemote: source => open({ name: source.name, size: source.info.size }, source) };
 }
